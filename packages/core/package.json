@@ -1,0 +1,33 @@
+{
+  "name": "@bicli/core",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "verify-swap": "tsx tests/verify-mcp-swap.ts"
+  },
+  "dependencies": {
+    "@ai-sdk/alibaba": "^1.0.17",
+    "@ai-sdk/anthropic": "^3.0.69",
+    "@ai-sdk/openai": "^3.0.53",
+    "@bicli/skills": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "ai": "^6.0.162",
+    "dotenv": "^16.6.1",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.17"
+  }
+}

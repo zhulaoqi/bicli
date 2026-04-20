@@ -1,0 +1,28 @@
+{
+  "name": "@bicli/web",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "dev": "tsx src/server/index.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@bicli/core": "workspace:*",
+    "express": "^5.1.0",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/ws": "^8.18.1",
+    "@types/node": "^22.19.17"
+  }
+}

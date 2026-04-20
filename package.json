@@ -1,0 +1,27 @@
+{
+  "name": "bicli",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "scripts": {
+    "dev:mcp": "pnpm --filter @bicli/mcp-server dev",
+    "dev:mcp-http": "pnpm --filter @bicli/mcp-server dev:http",
+    "dev:cli": "pnpm --filter @bicli/cli dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "seed": "pnpm --filter @bicli/mcp-server seed",
+    "db:push": "pnpm --filter @bicli/mcp-server db:push",
+    "db:generate": "pnpm --filter @bicli/mcp-server db:generate"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "tsx": "^4.21.0",
+    "typescript": "~6.0.2",
+    "vitest": "^4.1.4"
+  }
+}
