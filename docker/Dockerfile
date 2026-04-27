@@ -32,6 +32,7 @@ COPY packages/core/package.json        ./packages/core/
 COPY packages/core/dist                ./packages/core/dist/
 COPY packages/skills/package.json      ./packages/skills/
 COPY packages/skills/dist              ./packages/skills/dist/
+COPY packages/skills/definitions       ./packages/skills/definitions/
 
 # 仅安装生产依赖（workspace 内部包通过 symlink 解析，无需网络）
 RUN pnpm install --prod --frozen-lockfile

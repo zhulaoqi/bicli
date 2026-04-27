@@ -9,6 +9,8 @@ export type { ToolCallerConfig, ContextPayload } from "./llm/tool-caller.js";
 export { McpConnection } from "./mcp-client/connection.js";
 export { SkillMatcher } from "./skill-loader/matcher.js";
 export { buildSystemPrompt, filterTools } from "./skill-loader/injector.js";
+export { loadAllSkills } from "@bicli/skills";
+export type { Skill } from "@bicli/skills";
 export { filterToolsByPermission } from "./permissions/tool-filter.js";
 export type { ToolWithMeta } from "./permissions/tool-filter.js";
 export { ModelRegistry } from "./model-registry/index.js";

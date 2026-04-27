@@ -50,14 +50,16 @@ export function parseSkill(raw: string, skillPath: string = "", references: stri
     ? data.description
     : "";
   const triggers = data.triggers || extractTriggersFromDescription(description, data.name);
+  const requiredTools = data.required_tools || data.requiredTools || [];
+  const requiredPermissions = data.required_permissions || data.requiredPermissions || [];
 
   return {
     name: data.name,
     title: data.title || deriveTitle(data.name),
     description,
     triggers,
-    requiredTools: data.required_tools || [],
-    requiredPermissions: data.required_permissions || [],
+    requiredTools,
+    requiredPermissions,
     content: content.trim(),
     skillPath,
     references,

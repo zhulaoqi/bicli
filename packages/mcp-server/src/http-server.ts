@@ -14,6 +14,7 @@ import { listBuiltinModels, guessProvider, defaultModel, type ModelOption, type 
 import { customModels as customModelsTable } from "./db/schema.js";
 import { eq, and } from "drizzle-orm";
 import { buildSystemPrompt as buildSP } from "./chat/system-prompt.js";
+import { routeDataEyeHelpSkill } from "./chat/skill-routing.js";
 
 const PORT = parseInt(process.env.MCP_HTTP_PORT || "3211", 10);
 const HOST = process.env.MCP_HTTP_HOST || "0.0.0.0";
@@ -144,14 +145,18 @@ async function main() {
       const identity = await adapter.resolveIdentity(credential);
       const permissions = await adapter.getPermissions(identity.role);
 
-      const systemPrompt = buildSystemPrompt(identity, permissions, toolDefCache);
+      const routed = routeDataEyeHelpSkill(message, permissions, toolDefCache);
+      const systemPrompt = [
+        buildSystemPrompt(identity, permissions, routed.tools),
+        routed.skillPrompt,
+      ].filter(Boolean).join("\n\n---\n\n");
       const messages: LLMMessage[] = [
         { role: "system", content: systemPrompt },
         ...history.map((m) => ({ role: m.role, content: m.content })),
         { role: "user", content: message },
       ];
 
-      const result = await chatWithTools(messages, toolDefCache, token, db, adapter);
+      const result = await chatWithTools(messages, routed.tools, token, db, adapter);
       res.json(result);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
@@ -427,11 +432,15 @@ async function main() {
     await initToolHandlers();
     const token = extractBearerToken(req)!;
     const permissions = await adapter0.getPermissions(identity.role);
-    const systemPrompt = buildSP(
-      { userId: identity.userId, role: identity.role, orgId: identity.orgId },
-      permissions,
-      toolDefCache,
-    );
+    const routed = routeDataEyeHelpSkill(message, permissions, toolDefCache);
+    const systemPrompt = [
+      buildSP(
+        { userId: identity.userId, role: identity.role, orgId: identity.orgId },
+        permissions,
+        routed.tools,
+      ),
+      routed.skillPrompt,
+    ].filter(Boolean).join("\n\n---\n\n");
 
     // stream.ts 会在开始时 addMessage(user) — 所以此处只需拿入库前的历史即可
     // 对 assistant 消息：若存在工具调用记录，把工具名注入到 content 前缀，
@@ -450,7 +459,7 @@ async function main() {
         return { role: m.role as "user" | "assistant", content };
       });
 
-    const toolSpecs: StreamToolSpec[] = toolDefCache.map((t) => ({
+    const toolSpecs: StreamToolSpec[] = routed.tools.map((t) => ({
       name: t.name,
       description: t.description,
       inputSchema: t.inputSchema,
