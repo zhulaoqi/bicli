@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+export PROFILE="${PROFILE:-envtest}"
+
 log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
 }

@@ -22,6 +22,7 @@ RUN npm install -g pnpm@10
 
 # 复制 workspace 描述文件（pnpm 解析 workspace 协议需要）
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+COPY .env.envtest ./
 
 # 复制各包的 package.json + build.sh 已生成的 dist 产物
 COPY packages/mcp-server/package.json  ./packages/mcp-server/

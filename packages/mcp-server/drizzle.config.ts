@@ -1,10 +1,22 @@
 import { config } from "dotenv";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { existsSync } from "node:fs";
 import { defineConfig } from "drizzle-kit";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-config({ path: resolve(__dirname, "../../.env") });
+
+const profile = process.env.PROFILE || process.env.NODE_ENV;
+const envFiles = [
+  profile ? resolve(__dirname, `../../.env.${profile}`) : null,
+  resolve(__dirname, "../../.env"),
+];
+
+for (const envFile of envFiles) {
+  if (envFile && existsSync(envFile)) {
+    config({ path: envFile });
+  }
+}
 
 export default defineConfig({
   dialect: "mysql",
