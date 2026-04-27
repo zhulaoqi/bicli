@@ -15,7 +15,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "seed": "tsx src/db/seed.ts",
-    "db:push": "drizzle-kit push",
+    "db:push": "drizzle-kit generate && tsx src/db/apply-generated-migration.ts",
     "db:generate": "drizzle-kit generate",
     "test": "vitest run",
     "test:watch": "vitest"

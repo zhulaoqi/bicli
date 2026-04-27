@@ -11,12 +11,15 @@ import {
   serial,
   uniqueIndex,
 } from "drizzle-orm/mysql-core";
+import { sql } from "drizzle-orm";
+
+const currentTimestamp = sql`CURRENT_TIMESTAMP`;
 
 export const roles = mysqlTable("roles", {
   id: serial().primaryKey(),
   name: varchar({ length: 50 }).unique().notNull(),
   description: varchar({ length: 200 }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").default(currentTimestamp).notNull(),
 });
 
 export const users = mysqlTable("users", {
@@ -27,8 +30,8 @@ export const users = mysqlTable("users", {
     .references(() => roles.id)
     .notNull(),
   status: mysqlEnum("status", ["active", "inactive"]).default("active").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+  createdAt: timestamp("created_at").default(currentTimestamp).notNull(),
+  updatedAt: timestamp("updated_at").default(currentTimestamp).onUpdateNow().notNull(),
 });
 
 export const rolePermissions = mysqlTable("role_permissions", {
@@ -48,8 +51,8 @@ export const forms = mysqlTable("forms", {
     .references(() => users.id)
     .notNull(),
   status: mysqlEnum("status", ["draft", "published", "archived"]).default("draft").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+  createdAt: timestamp("created_at").default(currentTimestamp).notNull(),
+  updatedAt: timestamp("updated_at").default(currentTimestamp).onUpdateNow().notNull(),
 });
 
 export const formFields = mysqlTable("form_fields", {
@@ -71,7 +74,7 @@ export const configs = mysqlTable("configs", {
   value: json().notNull(),
   description: varchar({ length: 200 }),
   updatedBy: bigint("updated_by", { mode: "number", unsigned: true }).references(() => users.id),
-  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updated_at").default(currentTimestamp).onUpdateNow().notNull(),
 });
 
 export const fieldScopeRules = mysqlTable("field_scope_rules", {
@@ -114,7 +117,7 @@ export const auditLogs = mysqlTable("audit_logs", {
   sessionId: bigint("session_id", { mode: "number", unsigned: true }),
   ipAddress: varchar("ip_address", { length: 45 }),
   durationMs: int("duration_ms"),
-  createdAt: timestamp("created_at").defaultNow(),
+  createdAt: timestamp("created_at").default(currentTimestamp),
 });
 
 export const approvals = mysqlTable("approvals", {
@@ -129,8 +132,8 @@ export const approvals = mysqlTable("approvals", {
   reviewComment: varchar("review_comment", { length: 500 }),
   relatedResourceType: varchar("related_resource_type", { length: 50 }),
   relatedResourceId: bigint("related_resource_id", { mode: "number", unsigned: true }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+  createdAt: timestamp("created_at").default(currentTimestamp).notNull(),
+  updatedAt: timestamp("updated_at").default(currentTimestamp).onUpdateNow().notNull(),
 });
 
 export const sessions = mysqlTable("sessions", {
@@ -141,8 +144,8 @@ export const sessions = mysqlTable("sessions", {
   model: varchar("model", { length: 64 }).default("qwen-plus"),
   metadata: json("metadata"),
   status: mysqlEnum("status", ["active", "archived"]).default("active").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+  createdAt: timestamp("created_at").default(currentTimestamp).notNull(),
+  updatedAt: timestamp("updated_at").default(currentTimestamp).onUpdateNow().notNull(),
 });
 
 export const sessionMessages = mysqlTable("session_messages", {
@@ -153,7 +156,7 @@ export const sessionMessages = mysqlTable("session_messages", {
   toolName: varchar("tool_name", { length: 100 }),
   toolCalls: json("tool_calls"),
   durationMs: int("duration_ms"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").default(currentTimestamp).notNull(),
 });
 
 export const customModels = mysqlTable(
@@ -165,7 +168,7 @@ export const customModels = mysqlTable(
     endpoint: varchar("endpoint", { length: 500 }).notNull(),
     apiKey: varchar("api_key", { length: 200 }).notNull(),
     createdBy: varchar("created_by", { length: 64 }),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
+    createdAt: timestamp("created_at").default(currentTimestamp).notNull(),
   },
   (t) => ({
     // 每个用户可以各自注册同名模型，但同一用户不能重复注册
@@ -179,5 +182,5 @@ export const approvalActions = mysqlTable("approval_actions", {
   actorId: bigint("actor_id", { mode: "number", unsigned: true }).notNull(),
   action: mysqlEnum("action", ["submit", "approve", "reject", "cancel", "reassign"]).notNull(),
   comment: varchar("comment", { length: 500 }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").default(currentTimestamp).notNull(),
 });
