@@ -7,9 +7,9 @@ import type { PermissionAdapter, IdentityCredential, DataScopeRule, FieldScopeRu
 export class LocalPermissionAdapter implements PermissionAdapter {
   constructor(private db: Database) {}
 
-  async resolveIdentity(credential: IdentityCredential): Promise<{ userId: number; role: string }> {
+  async resolveIdentity(credential: IdentityCredential): Promise<{ userId: number | string; role: string; orgId?: string }> {
     if (credential.type === "direct") {
-      return { userId: credential.userId, role: credential.role };
+      return { userId: credential.userId, role: credential.role, orgId: credential.orgId };
     }
     const decoded = verifyToken(credential.token);
     if (!decoded) throw new Error("Invalid or expired token");

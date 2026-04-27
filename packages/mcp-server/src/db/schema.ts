@@ -9,6 +9,7 @@ import {
   json,
   mysqlEnum,
   serial,
+  uniqueIndex,
 } from "drizzle-orm/mysql-core";
 
 export const roles = mysqlTable("roles", {
@@ -134,8 +135,10 @@ export const approvals = mysqlTable("approvals", {
 
 export const sessions = mysqlTable("sessions", {
   id: serial().primaryKey(),
-  userId: bigint("user_id", { mode: "number", unsigned: true }).notNull(),
+  userId: varchar("user_id", { length: 64 }).notNull(),
+  orgId: varchar("org_id", { length: 64 }),
   title: varchar("title", { length: 200 }),
+  model: varchar("model", { length: 64 }).default("qwen-plus"),
   metadata: json("metadata"),
   status: mysqlEnum("status", ["active", "archived"]).default("active").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -148,9 +151,27 @@ export const sessionMessages = mysqlTable("session_messages", {
   role: mysqlEnum("role", ["user", "assistant", "system", "tool_call", "tool_result"]).notNull(),
   content: text("content").notNull(),
   toolName: varchar("tool_name", { length: 100 }),
+  toolCalls: json("tool_calls"),
   durationMs: int("duration_ms"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+export const customModels = mysqlTable(
+  "custom_models",
+  {
+    id: serial().primaryKey(),
+    modelId: varchar("model_id", { length: 100 }).notNull(),
+    name: varchar("name", { length: 100 }).notNull(),
+    endpoint: varchar("endpoint", { length: 500 }).notNull(),
+    apiKey: varchar("api_key", { length: 200 }).notNull(),
+    createdBy: varchar("created_by", { length: 64 }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    // 每个用户可以各自注册同名模型，但同一用户不能重复注册
+    userModelUnique: uniqueIndex("custom_models_model_id_user_unique").on(t.modelId, t.createdBy),
+  }),
+);
 
 export const approvalActions = mysqlTable("approval_actions", {
   id: serial().primaryKey(),

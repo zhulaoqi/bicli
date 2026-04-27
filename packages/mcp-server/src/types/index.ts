@@ -1,6 +1,7 @@
 export interface ToolContext {
-  userId: number;
+  userId: number | string;
   role: string;
+  orgId?: string;
   token?: string;
   ip?: string;
 }

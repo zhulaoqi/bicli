@@ -36,6 +36,7 @@ export async function withAuth(
       ...context,
       userId: identity.userId,
       role: identity.role,
+      orgId: identity.orgId || context.orgId,
     };
     const userPerms = await adapter.getPermissions(identity.role);
     if (!checkPermissions(userPerms, requiredPermissions)) {

@@ -9,11 +9,11 @@ export class HttpPermissionAdapter implements PermissionAdapter {
     this.timeout = timeout;
   }
 
-  async resolveIdentity(credential: IdentityCredential): Promise<{ userId: number; role: string }> {
+  async resolveIdentity(credential: IdentityCredential): Promise<{ userId: number | string; role: string; orgId?: string }> {
     if (credential.type === "direct") {
-      return { userId: credential.userId, role: credential.role };
+      return { userId: credential.userId, role: credential.role, orgId: credential.orgId };
     }
-    const data = await this.request<{ userId: number; role: string }>(
+    const data = await this.request<{ userId: number | string; role: string; orgId?: string }>(
       "/identity",
       { headers: { Authorization: `Bearer ${credential.token}` } },
     );

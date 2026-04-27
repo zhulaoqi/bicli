@@ -23,7 +23,7 @@ export async function approvalSubmit(db: Database, adapter: PermissionAdapter, a
       return formatError("VALIDATION_ERROR", "title, type, content, reviewerId 均为必填");
     }
 
-    if (Number(reviewerId) === context.userId) {
+    if (Number(reviewerId) === Number(context.userId)) {
       return formatError("VALIDATION_ERROR", "不能指定自己为审批人");
     }
 
@@ -36,7 +36,7 @@ export async function approvalSubmit(db: Database, adapter: PermissionAdapter, a
       title: String(title),
       type: String(type),
       content,
-      submittedBy: context.userId,
+      submittedBy: Number(context.userId),
       reviewerId: Number(reviewerId),
       relatedResourceType: relatedResourceType ? String(relatedResourceType) : null,
       relatedResourceId: relatedResourceId ? Number(relatedResourceId) : null,
@@ -44,7 +44,7 @@ export async function approvalSubmit(db: Database, adapter: PermissionAdapter, a
 
     await db.insert(approvalActions).values({
       approvalId: result.id,
-      actorId: context.userId,
+      actorId: Number(context.userId),
       action: "submit",
     });
 
@@ -53,7 +53,7 @@ export async function approvalSubmit(db: Database, adapter: PermissionAdapter, a
       title,
       type,
       status: "pending",
-      submittedBy: context.userId,
+      submittedBy: Number(context.userId),
       reviewerId: Number(reviewerId),
     });
   });

@@ -21,14 +21,14 @@ export async function configSet(db: Database, adapter: PermissionAdapter, args: 
       await db.update(configs).set({
         value: input.value,
         description: input.description ?? existing.description,
-        updatedBy: context.userId,
+        updatedBy: Number(context.userId),
       }).where(eq(configs.id, existing.id));
     } else {
       await db.insert(configs).values({
         key: input.key,
         value: input.value,
         description: input.description,
-        updatedBy: context.userId,
+        updatedBy: Number(context.userId),
       });
     }
 

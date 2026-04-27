@@ -13,7 +13,7 @@ export interface FieldScopeRule {
 }
 
 export interface PermissionAdapter {
-  resolveIdentity(credential: IdentityCredential): Promise<{ userId: number; role: string }>;
+  resolveIdentity(credential: IdentityCredential): Promise<{ userId: number | string; role: string; orgId?: string }>;
   getPermissions(role: string): Promise<string[]>;
   getDataScopeRules(role: string, resource: string): Promise<DataScopeRule[]>;
   getFieldScopeRules(role: string, resource: string): Promise<FieldScopeRule[]>;
@@ -21,4 +21,4 @@ export interface PermissionAdapter {
 
 export type IdentityCredential =
   | { type: "token"; token: string }
-  | { type: "direct"; userId: number; role: string };
+  | { type: "direct"; userId: number | string; role: string; orgId?: string };

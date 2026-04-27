@@ -15,7 +15,7 @@ export async function sessionDelete(db: Database, adapter: PermissionAdapter, ar
     const { sessionId } = cleanArgs as any;
 
     const [session] = await db.select().from(sessions)
-      .where(and(eq(sessions.id, Number(sessionId)), eq(sessions.userId, context.userId)))
+      .where(and(eq(sessions.id, Number(sessionId)), eq(sessions.userId, String(context.userId))))
       .limit(1);
     if (!session) return formatError("NOT_FOUND", "会话不存在或无权访问");
 

@@ -29,7 +29,7 @@ export async function sessionSave(db: Database, adapter: PermissionAdapter, args
 
     if (sessionId) {
       const [existing] = await db.select().from(sessions)
-        .where(and(eq(sessions.id, Number(sessionId)), eq(sessions.userId, context.userId)))
+        .where(and(eq(sessions.id, Number(sessionId)), eq(sessions.userId, String(context.userId))))
         .limit(1);
       if (!existing) return formatError("NOT_FOUND", "会话不存在或无权访问");
       sid = existing.id;
@@ -38,7 +38,7 @@ export async function sessionSave(db: Database, adapter: PermissionAdapter, args
       }
     } else {
       const [result] = await db.insert(sessions).values({
-        userId: context.userId,
+        userId: String(context.userId),
         title: title || messages[0]?.content?.slice(0, 100) || "新会话",
       }).$returningId();
       sid = result.id;

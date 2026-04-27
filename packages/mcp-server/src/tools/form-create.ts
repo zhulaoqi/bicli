@@ -24,7 +24,7 @@ export async function formCreate(db: Database, adapter: PermissionAdapter, args:
     const [result] = await db.insert(forms).values({
       name: input.name,
       description: input.description,
-      createdBy: context.userId,
+      createdBy: Number(context.userId),
       status: "draft",
     }).$returningId();
 

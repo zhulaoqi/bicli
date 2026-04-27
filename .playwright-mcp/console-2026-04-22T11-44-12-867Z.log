@@ -1,0 +1,4 @@
+[    1009ms] [ERROR] Executing inline script violates the following Content Security Policy directive 'script-src *.alicdn.com *.alipayobjects.com *.alipay.com *.cnzz.com res.wx.qq.com cf.aliyun.com ynuf.aliapp.org 'nonce-j7jriE1qQCWNu4UcgQW4' 'unsafe-eval' 'self' 'report-sample' cf.aliyun.com ynuf.aliapp.org *.nlark.com *.taobao.com'. Either the 'unsafe-inline' keyword, a hash ('sha256-RPxVYBXPlLfnTzF6CoE0csHhGI4Ay9W7FBgvwId7Ma8='), or a nonce ('nonce-...') is required to enable inline execution. The action has been blocked. @ https://o.alicdn.com/frontend-lib/common-lib/jquery.min.js:0
+[    1309ms] [LOG] Wed Apr 22 2026 19:44:14 GMT+0800 (中国标准时间) @ https://o.alicdn.com/frontend-lib/common-lib/jquery.min.js:0
+[    1566ms] [ERROR] Failed to load resource: the server responded with a status of 405 (Not Allowed) @ https://www.yuque.com/r/csp/report:0
+[    1635ms] [LOG] 🚀 app launch isH5: false @ https://gw.alipayobjects.com/os/chair-script/skylark/pc.a3200f8e.js:65

@@ -8,6 +8,12 @@ import { getDb } from "./db/connection.js";
 import { registerTools } from "./tools/register.js";
 import { createPermissionAdapter } from "./auth/create-adapter.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import { SessionStore } from "./chat/session-store.js";
+import { handleChatStream, type StreamToolSpec } from "./chat/stream.js";
+import { listBuiltinModels, guessProvider, defaultModel, type ModelOption, type CustomModelRecord } from "./chat/models-registry.js";
+import { customModels as customModelsTable } from "./db/schema.js";
+import { eq, and } from "drizzle-orm";
+import { buildSystemPrompt as buildSP } from "./chat/system-prompt.js";
 
 const PORT = parseInt(process.env.MCP_HTTP_PORT || "3211", 10);
 const HOST = process.env.MCP_HTTP_HOST || "0.0.0.0";
@@ -31,7 +37,7 @@ async function main() {
   app.use(cors({
     origin: process.env.MCP_CORS_ORIGIN || "*",
     methods: ["GET", "POST", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "mcp-session-id"],
+    allowedHeaders: ["Content-Type", "mcp-session-id", "Authorization"],
     exposedHeaders: ["mcp-session-id"],
   }));
   app.use(express.json());
@@ -89,6 +95,425 @@ async function main() {
     res.status(404).json({ error: "Session not found" });
   });
 
+  // ─── /chat — 聊天 API（服务端 LLM 编排 + 工具调用）───
+  // 前端只需传 message + JWT，服务端完成所有 AI 编排
+  app.post("/chat", async (req, res) => {
+    const token = extractBearerToken(req);
+    if (!token) {
+      res.status(401).json({ error: "Missing Authorization header" });
+      return;
+    }
+
+    const { message, history = [] } = req.body as {
+      message: string;
+      history?: Array<{ role: string; content: string }>;
+    };
+
+    if (!message) {
+      res.status(400).json({ error: "message is required" });
+      return;
+    }
+
+    try {
+      await initToolHandlers();
+      const db = await getDb();
+      const adapter = createPermissionAdapter(db);
+      const credential = { type: "token" as const, token };
+      const identity = await adapter.resolveIdentity(credential);
+      const permissions = await adapter.getPermissions(identity.role);
+
+      const systemPrompt = buildSystemPrompt(identity, permissions, toolDefCache);
+      const messages: LLMMessage[] = [
+        { role: "system", content: systemPrompt },
+        ...history.map((m) => ({ role: m.role, content: m.content })),
+        { role: "user", content: message },
+      ];
+
+      const result = await chatWithTools(messages, toolDefCache, token, db, adapter);
+      res.json(result);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      console.error("[chat] Error:", msg);
+      res.status(500).json({ error: msg });
+    }
+  });
+
+  // ─── /chat/models — 返回内置 + 当前用户的自定义模型 ───
+  app.get("/chat/models", async (req, res) => {
+    try {
+      const identity = await resolveIdentityFromReq(req);
+      const userId = identity ? String(identity.userId) : null;
+      const rows = userId
+        ? await db0.select().from(customModelsTable)
+            .where(eq(customModelsTable.createdBy, userId))
+            .orderBy(customModelsTable.createdAt)
+        : [];
+      const dbModels: ModelOption[] = rows.map((r) => ({
+        id: r.modelId,
+        name: r.name,
+        provider: "custom" as const,
+        tags: ["自定义"],
+        supportsTools: true,
+        available: true,
+      }));
+      res.json({ models: [...listBuiltinModels(), ...dbModels], default: defaultModel() });
+    } catch {
+      // 查询失败时至少返回内置模型
+      res.json({ models: listBuiltinModels(), default: defaultModel() });
+    }
+  });
+
+  // ─── /chat/custom-models — 自定义模型 CRUD（仅操作自己的） ───
+  app.get("/chat/custom-models", async (req, res) => {
+    const identity = await resolveIdentityFromReq(req);
+    const userId = identity ? String(identity.userId) : null;
+    if (!userId) return res.json({ models: [] });
+    const rows = await db0.select().from(customModelsTable)
+      .where(eq(customModelsTable.createdBy, userId))
+      .orderBy(customModelsTable.createdAt);
+    res.json({ models: rows.map((r) => ({ ...r, apiKey: r.apiKey.slice(0, 4) + "****" })) });
+  });
+
+  app.post("/chat/custom-models", async (req, res) => {
+    const { modelId, name, endpoint, apiKey } = req.body as Partial<CustomModelRecord>;
+    if (!modelId || !name || !endpoint || !apiKey) {
+      return res.status(400).json({ error: "modelId, name, endpoint, apiKey 均为必填" });
+    }
+    const identity = await resolveIdentityFromReq(req);
+    const createdBy = identity ? String(identity.userId) : null;
+    if (!createdBy) return res.status(401).json({ error: "未登录，无法添加自定义模型" });
+    try {
+      await db0.insert(customModelsTable).values({ modelId, name, endpoint, apiKey, createdBy });
+      const [row] = await db0.select().from(customModelsTable).where(
+        and(eq(customModelsTable.modelId, modelId), eq(customModelsTable.createdBy, createdBy))
+      );
+      res.json(row);
+    } catch (e: any) {
+      // Drizzle 会把 MySQL 错误包成 "Failed query: ..."，需要递归检查
+      const fullMsg = [e?.message, e?.cause?.message, String(e)].join(" ");
+      if (fullMsg.includes("Duplicate") || fullMsg.includes("ER_DUP_ENTRY")) {
+        return res.status(409).json({ error: `你已添加过模型 ID "${modelId}"，请直接在下拉菜单中选择` });
+      }
+      throw e;
+    }
+  });
+
+  app.delete("/chat/custom-models/:modelId", async (req, res) => {
+    const { modelId } = req.params;
+    const identity = await resolveIdentityFromReq(req);
+    const userId = identity ? String(identity.userId) : null;
+    if (!userId) return res.status(401).json({ error: "未登录" });
+    await db0.delete(customModelsTable).where(
+      and(eq(customModelsTable.modelId, modelId), eq(customModelsTable.createdBy, userId))
+    );
+    res.json({ ok: true });
+  });
+
+  // ─── /chat/tool — 单次同步工具调用（供前端表单使用，不走 LLM 流）───
+  app.post("/chat/tool", async (req, res) => {
+    const { toolName, args = {} } = req.body as { toolName?: string; args?: Record<string, unknown> };
+    if (!toolName) return res.status(400).json({ ok: false, error: "toolName 为必填" });
+
+    const identity = await resolveIdentityFromReq(req);
+    if (!identity) return res.status(401).json({ ok: false, error: "未登录" });
+
+    await initToolHandlers();
+    const handler = toolHandlerMap[toolName];
+    if (!handler) return res.status(404).json({ ok: false, error: `工具不存在：${toolName}` });
+
+    const token = extractBearerToken(req)!;
+    const injectedArgs = {
+      ...args,
+      _context: {
+        ...(((args as Record<string, unknown>)._context as Record<string, unknown>) || {}),
+        token,
+        userId: identity.userId,
+        role: identity.role,
+        orgId: identity.orgId,
+      },
+    };
+
+    try {
+      const result = await handler(db0, adapter0, injectedArgs);
+      const text = (result as { content?: Array<{ text?: string }> })?.content?.[0]?.text;
+      const parsed = text ? JSON.parse(text) : result;
+      res.json({ ok: true, data: parsed });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || String(e) });
+    }
+  });
+
+  // ─── /chat/custom-models/test-saved — 测试已保存的模型（从 DB 取原始 key）───
+  app.post("/chat/custom-models/test-saved", async (req, res) => {
+    const { modelId } = req.body as { modelId?: string };
+    if (!modelId) return res.status(400).json({ ok: false, error: "modelId 为必填" });
+    const identity = await resolveIdentityFromReq(req);
+    const userId = identity ? String(identity.userId) : null;
+    if (!userId) return res.status(401).json({ ok: false, error: "未登录" });
+    const [row] = await db0.select().from(customModelsTable).where(
+      and(eq(customModelsTable.modelId, modelId), eq(customModelsTable.createdBy, userId))
+    );
+    if (!row) return res.status(404).json({ ok: false, error: "模型不存在或无权限" });
+    const start = Date.now();
+    try {
+      const testUrl = row.endpoint.replace(/\/$/, "") + "/chat/completions";
+      const resp = await fetch(testUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${row.apiKey}` },
+        body: JSON.stringify({ model: modelId, max_tokens: 5, messages: [{ role: "user", content: "hi" }] }),
+        signal: AbortSignal.timeout(10000),
+      });
+      const latency = Date.now() - start;
+      if (!resp.ok) {
+        const body = await resp.text().catch(() => "");
+        return res.json({ ok: false, error: `HTTP ${resp.status}：${body.slice(0, 200)}`, latency });
+      }
+      const data = await resp.json().catch(() => ({}));
+      const reply = (data as any)?.choices?.[0]?.message?.content ?? "(无内容)";
+      return res.json({ ok: true, latency, reply: reply.slice(0, 80) });
+    } catch (e: any) {
+      return res.json({ ok: false, error: e?.message || String(e), latency: Date.now() - start });
+    }
+  });
+
+  // ─── /chat/custom-models/test — 测试自定义模型连通性 ───
+  app.post("/chat/custom-models/test", async (req, res) => {
+    const { endpoint, apiKey, modelId } = req.body as {
+      endpoint?: string; apiKey?: string; modelId?: string;
+    };
+    if (!endpoint || !apiKey || !modelId) {
+      return res.status(400).json({ ok: false, error: "endpoint、apiKey、modelId 均为必填" });
+    }
+    const start = Date.now();
+    try {
+      const testUrl = endpoint.replace(/\/$/, "") + "/chat/completions";
+      const resp = await fetch(testUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model: modelId,
+          max_tokens: 5,
+          messages: [{ role: "user", content: "hi" }],
+        }),
+        signal: AbortSignal.timeout(10000),
+      });
+      const latency = Date.now() - start;
+      if (!resp.ok) {
+        const body = await resp.text().catch(() => "");
+        return res.json({ ok: false, error: `HTTP ${resp.status}：${body.slice(0, 200)}`, latency });
+      }
+      const data = await resp.json().catch(() => ({}));
+      const reply = (data as any)?.choices?.[0]?.message?.content ?? "(无内容)";
+      return res.json({ ok: true, latency, reply: reply.slice(0, 80) });
+    } catch (e: any) {
+      const latency = Date.now() - start;
+      return res.json({ ok: false, error: e?.message || String(e), latency });
+    }
+  });
+
+  // ─── /session/* — 会话 CRUD ───
+  const db0 = await getDb();
+  const adapter0 = createPermissionAdapter(db0);
+  const store = new SessionStore(db0);
+
+  const resolveIdentityFromReq = async (req: express.Request) => {
+    const token = extractBearerToken(req);
+    if (!token) return null;
+    try {
+      const id = await adapter0.resolveIdentity({ type: "token", token });
+      return id;
+    } catch {
+      return null;
+    }
+  };
+
+  app.post("/session/create", async (req, res) => {
+    const identity = await resolveIdentityFromReq(req);
+    if (!identity) return res.status(401).json({ error: "unauthorized" });
+    const model = (req.body?.model as string) || defaultModel();
+    const title = (req.body?.title as string) || undefined;
+    const s = await store.create(String(identity.userId), identity.orgId, model, title);
+    res.json(s);
+  });
+
+  app.get("/session/list", async (req, res) => {
+    const identity = await resolveIdentityFromReq(req);
+    if (!identity) return res.status(401).json({ error: "unauthorized" });
+    const list = await store.list(String(identity.userId), 50);
+    res.json({ sessions: list });
+  });
+
+  app.get("/session/:id", async (req, res) => {
+    const identity = await resolveIdentityFromReq(req);
+    if (!identity) return res.status(401).json({ error: "unauthorized" });
+    const sid = Number(req.params.id);
+    if (!Number.isFinite(sid)) return res.status(400).json({ error: "invalid id" });
+    const s = await store.get(sid);
+    if (!s || s.userId !== String(identity.userId)) {
+      return res.status(404).json({ error: "not found" });
+    }
+    const messages = await store.getMessages(sid);
+    res.json({ session: s, messages });
+  });
+
+  app.patch("/session/:id", async (req, res) => {
+    const identity = await resolveIdentityFromReq(req);
+    if (!identity) return res.status(401).json({ error: "unauthorized" });
+    const sid = Number(req.params.id);
+    const s = await store.get(sid);
+    if (!s || s.userId !== String(identity.userId)) {
+      return res.status(404).json({ error: "not found" });
+    }
+    const { title, model } = req.body as { title?: string; model?: string };
+    if (title) await store.updateTitle(sid, title);
+    if (model) await store.updateModel(sid, model);
+    res.json(await store.get(sid));
+  });
+
+  app.delete("/session/:id", async (req, res) => {
+    const identity = await resolveIdentityFromReq(req);
+    if (!identity) return res.status(401).json({ error: "unauthorized" });
+    const sid = Number(req.params.id);
+    await store.delete(sid, String(identity.userId));
+    res.json({ ok: true });
+  });
+
+  // ─── /chat/stream — SSE 流式聊天 ───
+  app.post("/chat/stream", async (req, res) => { try {
+    const identity = await resolveIdentityFromReq(req);
+    if (!identity) return res.status(401).json({ error: "unauthorized" });
+
+    const { sessionId: rawSid, message, model: reqModel } = req.body as {
+      sessionId: number | string;
+      message: string;
+      model?: string;
+    };
+    const sid = Number(rawSid);
+    if (!message) return res.status(400).json({ error: "message is required" });
+    if (!Number.isFinite(sid)) return res.status(400).json({ error: "invalid sessionId" });
+
+    const session = await store.get(sid);
+    if (!session || session.userId !== String(identity.userId)) {
+      return res.status(404).json({ error: "session not found" });
+    }
+
+    if (reqModel && reqModel !== session.model) {
+      await store.updateModel(sid, reqModel);
+    }
+    const usedModel = reqModel || session.model || defaultModel();
+
+    await initToolHandlers();
+    const token = extractBearerToken(req)!;
+    const permissions = await adapter0.getPermissions(identity.role);
+    const systemPrompt = buildSP(
+      { userId: identity.userId, role: identity.role, orgId: identity.orgId },
+      permissions,
+      toolDefCache,
+    );
+
+    // stream.ts 会在开始时 addMessage(user) — 所以此处只需拿入库前的历史即可
+    // 对 assistant 消息：若存在工具调用记录，把工具名注入到 content 前缀，
+    // 防止 LLM 在历史回放中看不到工具证据而产生"说✅成功不需要调工具"的幻觉。
+    const history = (await store.getMessages(sid))
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .map((m) => {
+        let content = m.content;
+        if (m.role === "assistant" && Array.isArray(m.toolCalls) && m.toolCalls.length > 0) {
+          const toolSummary = m.toolCalls
+            .map((t) => `${t.name}:${t.status === "done" ? "ok" : t.status}`)
+            .join("|");
+          // 注入工具调用证据：使用 XML 注释格式，避免模型在新回复中模仿此格式
+          content = `<!--tool_history:${toolSummary}-->\n${content}`;
+        }
+        return { role: m.role as "user" | "assistant", content };
+      });
+
+    const toolSpecs: StreamToolSpec[] = toolDefCache.map((t) => ({
+      name: t.name,
+      description: t.description,
+      inputSchema: t.inputSchema,
+      execute: async (args) => {
+        const handler = toolHandlerMap[t.name];
+        if (!handler) {
+          return JSON.stringify({
+            success: false,
+            error: { code: "TOOL_NOT_FOUND", message: `Tool not found: ${t.name}` },
+          });
+        }
+        const injectedArgs = {
+          ...args,
+          _context: {
+            ...(((args as Record<string, unknown>)._context as Record<string, unknown>) || {}),
+            token,
+            userId: identity.userId,
+            role: identity.role,
+            orgId: identity.orgId,
+          },
+        };
+        const result = await handler(db0, adapter0, injectedArgs);
+        const text =
+          (result as { content?: Array<{ text?: string }> })?.content?.[0]?.text ??
+          JSON.stringify(result);
+        return text;
+      },
+    }));
+
+    // ① 先查 DB：是否是当前用户自己添加的自定义模型
+    //    必须先查 DB，否则 gpt-*/claude-* 前缀的自定义模型会被误识别为内置 OpenAI/Anthropic
+    let customConfig: { endpoint: string; apiKey: string; model: string } | undefined;
+    try {
+      const userId = identity?.userId ? String(identity.userId) : null;
+      const [dbCustom] = await db0.select().from(customModelsTable)
+        .where(and(
+          eq(customModelsTable.modelId, usedModel),
+          ...(userId ? [eq(customModelsTable.createdBy, userId)] : [])
+        ));
+      if (dbCustom) {
+        customConfig = { endpoint: dbCustom.endpoint, apiKey: dbCustom.apiKey, model: usedModel };
+      } else if (process.env.CUSTOM_API_URL && process.env.CUSTOM_MODEL === usedModel) {
+        customConfig = {
+          endpoint: process.env.CUSTOM_API_URL,
+          apiKey: process.env.CUSTOM_API_KEY || process.env.CUSTOM_MODEL_API_KEY || "",
+          model: usedModel,
+        };
+      }
+    } catch (dbErr) {
+      console.warn("[stream] custom model DB lookup failed, falling back to built-in provider:", dbErr);
+      // 降级：用环境变量兜底
+      if (process.env.CUSTOM_API_URL && process.env.CUSTOM_MODEL === usedModel) {
+        customConfig = {
+          endpoint: process.env.CUSTOM_API_URL,
+          apiKey: process.env.CUSTOM_API_KEY || process.env.CUSTOM_MODEL_API_KEY || "",
+          model: usedModel,
+        };
+      }
+    }
+
+    // ② 只有查不到自定义配置时，才根据名字猜内置 provider
+    const provider = customConfig ? "custom" : guessProvider(usedModel);
+
+    await handleChatStream({
+      res,
+      sessionId: sid,
+      userMessage: message,
+      model: usedModel,
+      provider,
+      systemPrompt,
+      history,
+      tools: toolSpecs,
+      store,
+      customConfig,
+    });
+  } catch (e: any) {
+    console.error("[/chat/stream] unhandled error:", e);
+    if (!res.headersSent) {
+      res.status(500).json({ error: e?.message || String(e) });
+    } else {
+      res.end();
+    }
+  }
+  });
+
   app.get("/health", (_req, res) => {
     res.json({
       status: "ok",
@@ -110,12 +535,295 @@ async function main() {
     console.log(`  CORS:      ${process.env.MCP_CORS_ORIGIN || "*"}`);
     console.log(`  ─────────────────────────\n`);
   });
+
+  // 启动时预热：加载所有工具模块，避免第一次 /chat/stream 请求时才做 dynamic import
+  initToolHandlers()
+    .then(() => console.log(`[warmup] tool handlers ready`))
+    .catch((e) => console.error(`[warmup] failed to init tool handlers:`, e));
 }
 
 main().catch((err) => {
   console.error("Failed to start MCP HTTP Server:", err);
   process.exit(1);
 });
+
+// ─── Chat API helpers ───
+
+function extractBearerToken(req: express.Request): string | null {
+  const auth = req.headers.authorization;
+  if (!auth?.startsWith("Bearer ")) return null;
+  return auth.slice(7);
+}
+
+function buildSystemPrompt(
+  identity: { userId: string | number; role: string; orgId?: string },
+  permissions: string[],
+  toolDefs: ToolDefinition[],
+): string {
+  const toolList = toolDefs.map((t) => `- ${t.name}: ${t.description}`).join("\n");
+  return `你是 DataEye AI 助手，嵌入在数据分析平台中。
+当前用户: ID=${identity.userId}, 角色=${identity.role}, 组织=${identity.orgId || "unknown"}
+用户权限: ${permissions.join(", ")}
+
+可用工具:
+${toolList}
+
+重要规则:
+1. 所有工具调用会自动注入用户身份和 token，你无需关心权限传递
+2. 使用中文回复
+3. 数据查询先用 dataeye_project_list 确定项目/产品，再用具体工具
+4. SQL 查询先用 dataeye_datasource_list 获取 sourceId`;
+}
+
+interface ToolDefinition {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+
+interface ChatResult {
+  content: string;
+  toolCalls?: Array<{ name: string; status: string }>;
+}
+
+type LLMMessage = {
+  role: string;
+  content: string | null;
+  tool_calls?: Array<{ id: string; type: string; function: { name: string; arguments: string } }>;
+  tool_call_id?: string;
+};
+
+/**
+ * LLM + MCP 工具调用编排
+ * 支持多轮 function calling：LLM → tool → LLM → tool → ... → final response
+ */
+async function chatWithTools(
+  messages: LLMMessage[],
+  toolDefs: ToolDefinition[],
+  token: string,
+  db: any,
+  adapter: any,
+  depth = 0,
+): Promise<ChatResult> {
+  if (depth > 8) return { content: "已达到最大工具调用深度（8轮），请缩小问题范围重试。" };
+
+  let apiUrl = process.env.CUSTOM_API_URL || process.env.LLM_API_URL;
+  const apiKey = process.env.CUSTOM_API_KEY || process.env.ALIBABA_API_KEY || process.env.OPENAI_API_KEY;
+  const model = process.env.CUSTOM_MODEL || process.env.LLM_MODEL || "qwen-plus";
+
+  if (!apiUrl && process.env.ALIBABA_API_KEY) {
+    apiUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
+  } else if (!apiUrl && process.env.OPENAI_API_KEY) {
+    apiUrl = "https://api.openai.com/v1";
+  }
+
+  if (!apiUrl || !apiKey) {
+    return { content: "LLM 未配置（需要设置 CUSTOM_API_URL + CUSTOM_API_KEY 环境变量）" };
+  }
+
+  const openaiTools = toolDefs.map((t) => ({
+    type: "function" as const,
+    function: { name: t.name, description: t.description, parameters: t.inputSchema },
+  }));
+
+  const resp = await fetch(`${apiUrl.replace(/\/+$/, "")}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      tools: openaiTools.length > 0 ? openaiTools : undefined,
+    }),
+  });
+
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => "");
+    throw new Error(`LLM API ${resp.status}: ${text.slice(0, 200)}`);
+  }
+
+  const data = await resp.json() as {
+    choices?: Array<{
+      message?: {
+        content?: string | null;
+        tool_calls?: Array<{ id: string; type: string; function: { name: string; arguments: string } }>;
+      };
+      finish_reason?: string;
+    }>;
+  };
+
+  const choice = data.choices?.[0];
+  const assistantMessage = choice?.message;
+  if (!assistantMessage) return { content: "（无响应）" };
+
+  // 无工具调用 → 直接返回文本
+  if (!assistantMessage.tool_calls?.length) {
+    return { content: assistantMessage.content || "（无响应）" };
+  }
+
+  // 有工具调用 → 执行后继续对话
+  const collectedCalls: ChatResult["toolCalls"] = [];
+  messages.push({
+    role: "assistant",
+    content: assistantMessage.content || null,
+    tool_calls: assistantMessage.tool_calls,
+  });
+
+  for (const tc of assistantMessage.tool_calls) {
+    let args: Record<string, unknown> = {};
+    try { args = JSON.parse(tc.function.arguments); } catch {}
+
+    // 注入 token — 这是关键！前端的 JWT 透传到每个工具调用
+    args._context = { ...(args._context as Record<string, unknown> || {}), token };
+
+    let toolResult: string;
+    let status = "done";
+    try {
+      const handler = getToolHandler(tc.function.name);
+      if (handler) {
+        const result = await handler(db, adapter, args);
+        toolResult = result?.content?.[0]?.text || JSON.stringify(result);
+      } else {
+        toolResult = JSON.stringify({ success: false, error: { message: `Tool not found: ${tc.function.name}` } });
+        status = "error";
+      }
+    } catch (err) {
+      toolResult = JSON.stringify({ success: false, error: { message: err instanceof Error ? err.message : "Unknown error" } });
+      status = "error";
+    }
+
+    collectedCalls.push({ name: tc.function.name, status });
+    messages.push({ role: "tool", content: toolResult, tool_call_id: tc.id });
+  }
+
+  // 递归：带工具结果继续让 LLM 生成最终回复
+  const nextResult = await chatWithTools(messages, toolDefs, token, db, adapter, depth + 1);
+  return {
+    content: nextResult.content,
+    toolCalls: [...collectedCalls, ...(nextResult.toolCalls || [])],
+  };
+}
+
+/**
+ * 获取工具执行函数的引用（直接调用，不走 MCP 协议）
+ */
+function getToolHandler(name: string): ((db: any, adapter: any, args: Record<string, unknown>) => Promise<any>) | null {
+  return toolHandlerMap[name] || null;
+}
+
+// 延迟初始化工具映射（避免循环依赖）
+let toolHandlerMap: Record<string, (db: any, adapter: any, args: Record<string, unknown>) => Promise<any>> = {};
+let toolDefCache: ToolDefinition[] = [];
+
+async function initToolHandlers() {
+  if (Object.keys(toolHandlerMap).length > 0) return;
+
+  const mods = await Promise.all([
+    import("./tools/dataeye-project-list.js"),
+    import("./tools/dataeye-event-list.js"),
+    import("./tools/dataeye-event-property.js"),
+    import("./tools/dataeye-table-list.js"),
+    import("./tools/dataeye-table-detail.js"),
+    import("./tools/dataeye-dws-table.js"),
+    import("./tools/dataeye-datasource-list.js"),
+    import("./tools/dataeye-sql-query.js"),
+    import("./tools/self-permissions.js"),
+    import("./tools/user-list.js"),
+    import("./tools/data-query.js"),
+    import("./tools/form-query.js"),
+    import("./tools/dataeye-event-group-list.js"),   // mods[12]
+    import("./tools/dataeye-event-group-add.js"),    // mods[13]
+    import("./tools/dataeye-event-create.js"),       // mods[14]
+    import("./tools/dataeye-event-update.js"),       // mods[15]
+    import("./tools/dataeye-event-status.js"),       // mods[16]
+    import("./tools/dataeye-event-property-save.js"), // mods[17]
+    import("./tools/dataeye-event-analysis.js"),     // mods[18]
+    import("./tools/dataeye-table-validate-name.js"), // mods[19]
+    import("./tools/dataeye-table-create.js"),       // mods[20]
+    import("./tools/dataeye-table-update-status.js"), // mods[21]
+    import("./tools/dataeye-user-list.js"),          // mods[22]
+    import("./tools/dataeye-role-list.js"),          // mods[23]
+    import("./tools/dataeye-product-create.js"),     // mods[24]
+    import("./tools/dataeye-analysis-list.js"),      // mods[25]
+    import("./tools/dataeye-analysis-execute.js"),   // mods[26]
+    import("./tools/dataeye-user-create.js"),        // mods[27]
+    import("./tools/dataeye-role-create.js"),        // mods[28]
+    import("./tools/dataeye-user-assign-role.js"),   // mods[29]
+    // Datart 工具（仅 DATART_API_URL 配置时生效）
+    import("./tools/datart-dashboard-list.js"),      // mods[30]
+    import("./tools/datart-dashboard-detail.js"),    // mods[31]
+    import("./tools/datart-data-execute.js"),         // mods[32]
+    import("./tools/datart-data-test-execute.js"),    // mods[33]
+    import("./tools/datart-source-list.js"),          // mods[34]
+    import("./tools/datart-view-list.js"),             // mods[35]
+    import("./tools/datart-view-create.js"),           // mods[36]
+    import("./tools/datart-schedule-list.js"),         // mods[37]
+    import("./tools/datart-schedule-create.js"),       // mods[38]
+    import("./tools/datart-schedule-execute.js"),      // mods[39]
+    import("./tools/datart-share-create.js"),          // mods[40]
+    import("./tools/datart-org-list.js"),              // mods[41]
+  ]);
+
+  const enableDatart = !!process.env.DATART_API_URL;
+
+  const entries: Array<[string, any, any]> = [
+    ["dataeye_project_list", mods[0].dateyeProjectList, mods[0].dateyeProjectListDef],
+    ["dataeye_event_list", mods[1].dateyeEventList, mods[1].dateyeEventListDef],
+    ["dataeye_event_property", mods[2].dateyeEventProperty, mods[2].dateyeEventPropertyDef],
+    ["dataeye_table_list", mods[3].dateyeTableList, mods[3].dateyeTableListDef],
+    ["dataeye_table_detail", mods[4].dateyeTableDetail, mods[4].dateyeTableDetailDef],
+    ["dataeye_dws_table", mods[5].dateyeDwsTable, mods[5].dateyeDwsTableDef],
+    ["dataeye_datasource_list", mods[6].dateyeDatasourceList, mods[6].dateyeDatasourceListDef],
+    ["dataeye_sql_query", mods[7].dateyeSqlQuery, mods[7].dateyeSqlQueryDef],
+    ["self_permissions", mods[8].selfPermissions, mods[8].selfPermissionsSchema],
+    ["dataeye_event_group_list",    mods[12].dateyeEventGroupList,    mods[12].dateyeEventGroupListDef],
+    ["dataeye_event_group_add",     mods[13].dateyeEventGroupAdd,     mods[13].dateyeEventGroupAddDef],
+    ["dataeye_event_create",        mods[14].dateyeEventCreate,       mods[14].dateyeEventCreateDef],
+    ["dataeye_event_update",        mods[15].dateyeEventUpdate,       mods[15].dateyeEventUpdateDef],
+    ["dataeye_event_status",        mods[16].dateyeEventStatus,       mods[16].dateyeEventStatusDef],
+    ["dataeye_event_property_save", mods[17].dateyeEventPropertySave, mods[17].dateyeEventPropertySaveDef],
+    ["dataeye_event_analysis",      mods[18].dateyeEventAnalysis,     mods[18].dateyeEventAnalysisDef],
+    ["dataeye_table_validate_name", mods[19].dateyeTableValidateName, mods[19].dateyeTableValidateNameDef],
+    ["dataeye_table_create",        mods[20].dateyeTableCreate,       mods[20].dateyeTableCreateDef],
+    ["dataeye_table_update_status", mods[21].dateyeTableUpdateStatus, mods[21].dateyeTableUpdateStatusDef],
+    ["dataeye_user_list",           mods[22].dateyeUserList,          mods[22].dateyeUserListDef],
+    ["dataeye_role_list",           mods[23].dateyeRoleList,          mods[23].dateyeRoleListDef],
+    ["dataeye_product_create",      mods[24].dateyeProductCreate,     mods[24].dateyeProductCreateDef],
+    ["dataeye_analysis_list",       mods[25].dateyeAnalysisList,      mods[25].dateyeAnalysisListDef],
+    ["dataeye_analysis_execute",    mods[26].dateyeAnalysisExecute,   mods[26].dateyeAnalysisExecuteDef],
+    ["dataeye_user_create",         mods[27].dateyeUserCreate,        mods[27].dateyeUserCreateDef],
+    ["dataeye_role_create",         mods[28].dateyeRoleCreate,        mods[28].dateyeRoleCreateDef],
+    ["dataeye_user_assign_role",    mods[29].dateyeUserAssignRole,    mods[29].dateyeUserAssignRoleDef],
+    // Datart 工具（条件加载）
+    ...(enableDatart ? [
+      ["datart_dashboard_list",     mods[30].datartDashboardList,     mods[30].datartDashboardListDef],
+      ["datart_dashboard_detail",   mods[31].datartDashboardDetail,   mods[31].datartDashboardDetailDef],
+      ["datart_data_execute",       mods[32].datartDataExecute,       mods[32].datartDataExecuteDef],
+      ["datart_data_test_execute",  mods[33].datartDataTestExecute,   mods[33].datartDataTestExecuteDef],
+      ["datart_source_list",        mods[34].datartSourceList,        mods[34].datartSourceListDef],
+      ["datart_view_list",          mods[35].datartViewList,          mods[35].datartViewListDef],
+      ["datart_view_create",        mods[36].datartViewCreate,        mods[36].datartViewCreateDef],
+      ["datart_schedule_list",      mods[37].datartScheduleList,      mods[37].datartScheduleListDef],
+      ["datart_schedule_create",    mods[38].datartScheduleCreate,    mods[38].datartScheduleCreateDef],
+      ["datart_schedule_execute",   mods[39].datartScheduleExecute,   mods[39].datartScheduleExecuteDef],
+      ["datart_share_create",       mods[40].datartShareCreate,       mods[40].datartShareCreateDef],
+      ["datart_org_list",           mods[41].datartOrgList,           mods[41].datartOrgListDef],
+    ] as Array<[string, any, any]> : []),
+  ];
+
+  for (const [name, handler, def] of entries) {
+    toolHandlerMap[name] = handler;
+    if (def?.inputSchema) {
+      toolDefCache.push({ name, description: def.description || name, inputSchema: def.inputSchema });
+    } else if (def) {
+      // zod schema — 需要转换，暂时跳过
+      toolDefCache.push({ name, description: def.description || name, inputSchema: { type: "object" } });
+    }
+  }
+  console.error(`[chat] Initialized ${entries.length} tool handlers for /chat endpoint`);
+}
 
 function buildDemoHTML(port: number): string {
   return `<!DOCTYPE html>

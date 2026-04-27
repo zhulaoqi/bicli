@@ -26,10 +26,10 @@ export async function approvalReview(db: Database, adapter: PermissionAdapter, a
     if (approval.status !== "pending") return formatError("CONFLICT", "审批单已处理，当前状态: " + approval.status);
 
     if (action === "approve" || action === "reject") {
-      if (approval.reviewerId !== context.userId) {
+      if (approval.reviewerId !== Number(context.userId)) {
         return formatError("FORBIDDEN", "只有指定审批人可以审批");
       }
-      if (approval.submittedBy === context.userId) {
+      if (approval.submittedBy === Number(context.userId)) {
         return formatError("FORBIDDEN", "不能审批自己提交的申请");
       }
 
@@ -56,7 +56,7 @@ export async function approvalReview(db: Database, adapter: PermissionAdapter, a
 
     await db.insert(approvalActions).values({
       approvalId: Number(approvalId),
-      actorId: context.userId,
+      actorId: Number(context.userId),
       action,
       comment: comment ? String(comment) : null,
     });

@@ -24,14 +24,14 @@ export async function sessionList(db: Database, adapter: PermissionAdapter, args
       updatedAt: sessions.updatedAt,
       messageCount: sql<number>`(SELECT COUNT(*) FROM session_messages WHERE session_id = ${sessions.id})`,
     }).from(sessions)
-      .where(eq(sessions.userId, context.userId))
+      .where(eq(sessions.userId, String(context.userId)))
       .orderBy(desc(sessions.updatedAt))
       .limit(Number(pageSize))
       .offset(offset);
 
     const [countResult] = await db.select({ count: sql<number>`count(*)` })
       .from(sessions)
-      .where(eq(sessions.userId, context.userId));
+      .where(eq(sessions.userId, String(context.userId)));
 
     return formatSuccess({
       items,

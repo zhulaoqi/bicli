@@ -14,6 +14,26 @@ export function extractContext(args: Record<string, unknown>): {
   }
   const ctx = _context as Record<string, unknown>;
 
+  const hasResolvedIdentity =
+    (typeof ctx.userId === "number" || typeof ctx.userId === "string") &&
+    typeof ctx.role === "string";
+
+  // 优先信任上游 PermissionAdapter 已解析好的身份（带或不带 token）。
+  // 这样外部系统（dataeye 等）的 JWT 只用于透传给下游 API，无需 BiCLI 本地验签。
+  if (hasResolvedIdentity) {
+    return {
+      context: {
+        userId: ctx.userId as number | string,
+        role: ctx.role as string,
+        orgId: typeof ctx.orgId === "string" ? ctx.orgId : undefined,
+        token: typeof ctx.token === "string" ? ctx.token : undefined,
+        ip: typeof ctx.ip === "string" ? ctx.ip : undefined,
+      },
+      cleanArgs,
+    };
+  }
+
+  // 退化路径：只收到 BiCLI 本地签发的 token，本地解出身份
   if (typeof ctx.token === "string" && ctx.token) {
     const decoded = verifyToken(ctx.token);
     if (!decoded) throw new Error("Invalid or expired token");
@@ -21,6 +41,7 @@ export function extractContext(args: Record<string, unknown>): {
       context: {
         userId: decoded.userId,
         role: decoded.role,
+        orgId: typeof ctx.orgId === "string" ? ctx.orgId : undefined,
         token: ctx.token,
         ip: typeof ctx.ip === "string" ? ctx.ip : undefined,
       },
@@ -28,17 +49,9 @@ export function extractContext(args: Record<string, unknown>): {
     };
   }
 
-  if (typeof ctx.userId !== "number" || typeof ctx.role !== "string") {
-    throw new Error("Invalid _context: requires userId (number) and role (string), or token (string)");
-  }
-  return {
-    context: {
-      userId: ctx.userId,
-      role: ctx.role,
-      ip: typeof ctx.ip === "string" ? ctx.ip : undefined,
-    },
-    cleanArgs,
-  };
+  throw new Error(
+    "Invalid _context: requires userId+role (resolved by adapter) or a BiCLI-signed token",
+  );
 }
 
 export function checkPermission(userPermissions: string[], required: string): boolean {
