@@ -129,11 +129,53 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
   // 这里用状态机在 text-delta 层面把它过滤掉，不让它到达前端。
   let commentBuf = "";     // 正在缓冲中的潜在注释
   let inComment = false;   // 是否处于 <!-- 内部
+  let followupBuf = "";    // 正在缓冲中的 FOLLOWUPS 隐藏协议
+  let inFollowups = false;
 
   function flushTextDelta(text: string) {
     if (!text) return;
     fullText += text;
     sseSend(res, "text_delta", { content: text });
+  }
+
+  function appendHiddenText(text: string) {
+    if (!text) return;
+    fullText += text;
+  }
+
+  function processVisibleDelta(text: string) {
+    const prefixes = ["__FOLLOWUPS__", "FOLLOWUPS"];
+
+    for (const ch of text) {
+      if (inFollowups) {
+        followupBuf += ch;
+        const match = followupBuf.match(/(?:__)?FOLLOWUPS(?:__)?\s*\[[\s\S]*?\]\s*(?:__)?END(?:__)?/i);
+        if (match) {
+          appendHiddenText(match[0]);
+          const rest = followupBuf.slice((match.index ?? 0) + match[0].length);
+          followupBuf = "";
+          inFollowups = false;
+          if (rest) processVisibleDelta(rest);
+        } else if (followupBuf.length > 4000) {
+          // 异常情况下不是合法隐藏协议，避免永久吞文本。
+          flushTextDelta(followupBuf);
+          followupBuf = "";
+          inFollowups = false;
+        }
+        continue;
+      }
+
+      followupBuf += ch;
+      let upper = followupBuf.toUpperCase();
+      while (followupBuf && !prefixes.some((p) => p.startsWith(upper))) {
+        flushTextDelta(followupBuf[0]);
+        followupBuf = followupBuf.slice(1);
+        upper = followupBuf.toUpperCase();
+      }
+      if (prefixes.includes(upper)) {
+        inFollowups = true;
+      }
+    }
   }
 
   function processTextDelta(chunk: string) {
@@ -150,10 +192,8 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
           }
           // 继续缓冲等待 <!-- 完整
         } else {
-          // 非注释起始，把缓冲区 flush 出去再继续
-          const flush = commentBuf.slice(0, -1); // 除了最后一个字符（已加过）
-          // 实际上 commentBuf 末尾是 ch，把 commentBuf 整体 flush
-          flushTextDelta(commentBuf);
+          // 非注释起始，把缓冲区交给隐藏协议过滤器再输出
+          processVisibleDelta(commentBuf);
           commentBuf = "";
         }
       } else {
@@ -169,7 +209,7 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
             if (i + 1 < chunk.length && chunk[i + 1] === "\n") i++;
           } else {
             // 非工具元数据注释，原样输出
-            flushTextDelta(commentBuf);
+            processVisibleDelta(commentBuf);
             commentBuf = "";
             inComment = false;
           }
@@ -253,7 +293,16 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
 
     // 流结束后把过滤器缓冲区剩余内容 flush（非工具元数据的残留注释原样输出）
     if (commentBuf && !(/<!--[\s\S]*?tool_(history|call|result):/i.test(commentBuf))) {
-      flushTextDelta(commentBuf);
+      processVisibleDelta(commentBuf);
+    }
+    if (followupBuf) {
+      if (inFollowups) {
+        appendHiddenText(followupBuf);
+      } else {
+        flushTextDelta(followupBuf);
+      }
+      followupBuf = "";
+      inFollowups = false;
     }
 
     // 检测模型是否把工具调用以文本形式输出（而非真正调用）
