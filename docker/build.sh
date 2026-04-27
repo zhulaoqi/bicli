@@ -25,6 +25,9 @@ function isError(){
 function build(){
     Log INFO "Start ${COMPONENT_NAME} component build ..."
 
+    npm install -g pnpm@10
+    isError
+
     pnpm install --frozen-lockfile
     isError
 
