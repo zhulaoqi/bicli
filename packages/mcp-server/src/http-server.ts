@@ -17,8 +17,26 @@ import { buildSystemPrompt as buildSP } from "./chat/system-prompt.js";
 
 const PORT = parseInt(process.env.MCP_HTTP_PORT || "3211", 10);
 const HOST = process.env.MCP_HTTP_HOST || "0.0.0.0";
+const BASE_PATH = normalizeBasePath(process.env.MCP_BASE_PATH ?? "/bicli-mcp");
 
 const transports: Record<string, StreamableHTTPServerTransport> = {};
+
+function normalizeBasePath(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "/") return "";
+  return trimmed.startsWith("/") ? trimmed.replace(/\/+$/, "") : `/${trimmed.replace(/\/+$/, "")}`;
+}
+
+function stripBasePath(req: express.Request, _res: express.Response, next: express.NextFunction) {
+  if (!BASE_PATH) return next();
+  const url = req.url;
+  if (url === BASE_PATH) {
+    req.url = "/";
+  } else if (url.startsWith(`${BASE_PATH}/`) || url.startsWith(`${BASE_PATH}?`)) {
+    req.url = url.slice(BASE_PATH.length) || "/";
+  }
+  next();
+}
 
 async function createMcpServer() {
   const server = new Server(
@@ -33,6 +51,10 @@ async function createMcpServer() {
 
 async function main() {
   const app = express();
+
+  // 统一支持 Ingress 前缀路径：/bicli-mcp/chat/stream -> /chat/stream。
+  // 保留无前缀路由，方便本地调试和服务间直连。
+  app.use(stripBasePath);
 
   app.use(cors({
     origin: process.env.MCP_CORS_ORIGIN || "*",
@@ -531,6 +553,7 @@ async function main() {
     console.log(`\n  BiCLI MCP HTTP Server`);
     console.log(`  ─────────────────────────`);
     console.log(`  Endpoint:  http://${HOST}:${PORT}/mcp`);
+    if (BASE_PATH) console.log(`  BasePath:  ${BASE_PATH}`);
     console.log(`  Health:    http://${HOST}:${PORT}/health`);
     console.log(`  CORS:      ${process.env.MCP_CORS_ORIGIN || "*"}`);
     console.log(`  ─────────────────────────\n`);

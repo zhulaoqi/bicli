@@ -7,6 +7,17 @@ log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
 }
 
+load_profile_env() {
+  local env_file="/app/.env.${PROFILE}"
+  if [ -f "${env_file}" ]; then
+    log "Loading profile env: ${env_file}"
+    set -a
+    # shellcheck disable=SC1090
+    . "${env_file}"
+    set +a
+  fi
+}
+
 load_apollo_env() {
   export APOLLO_SERVICE="${APOLLO_SERVICE:-${APOLLO_META:-}}"
 
@@ -56,14 +67,24 @@ const lines = Object.entries(configs)
 writeFileSync(output, `${lines.join("\n")}\n`);
 console.log(`[Apollo] wrote ${lines.length} keys to ${output}`);
 NODE
+
+  if [ -f "${BICLI_RUNTIME_ENV_FILE}" ]; then
+    log "Loading runtime env: ${BICLI_RUNTIME_ENV_FILE}"
+    set -a
+    # shellcheck disable=SC1090
+    . "${BICLI_RUNTIME_ENV_FILE}"
+    set +a
+  fi
 }
 
+load_profile_env
 load_apollo_env
 
 # 配置由代码默认值或部署平台环境变量提供；start.sh 只负责启动进程。
 log "Starting BiCLI MCP HTTP server ..."
 log "  Profile     : ${PROFILE:-default}"
 log "  Port        : ${MCP_HTTP_PORT:-3211}"
+log "  BasePath    : ${MCP_BASE_PATH:-/bicli-mcp}"
 log "  DataEye API : ${DATAEYE_API_URL:-<not set>}"
 log "  Datart API  : ${DATART_API_URL:-<not set>}"
 
