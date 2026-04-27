@@ -533,6 +533,7 @@ async function main() {
       history,
       tools: toolSpecs,
       store,
+      skipNoToolListGuard: routed.skill?.name.startsWith("dataeye-help-") ?? false,
       customConfig,
     });
   } catch (e: any) {

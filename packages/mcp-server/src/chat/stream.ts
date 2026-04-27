@@ -27,6 +27,7 @@ export interface StreamChatParams {
   history: Array<{ role: "user" | "assistant"; content: string }>;
   tools: StreamToolSpec[];
   store: SessionStore;
+  skipNoToolListGuard?: boolean;
   maxSteps?: number;
   customConfig?: CustomModelConfig;
 }
@@ -47,6 +48,7 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
     history,
     tools,
     store,
+    skipNoToolListGuard = false,
     maxSteps = 8,
     customConfig,
   } = params;
@@ -325,10 +327,11 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
     }
 
     // ── 幻觉列表探测 ─────────────────────────────────────────────────────────
-    // 当本轮没有任何工具调用，但输出了大量列表项（>8条），判定为从历史记忆中复读数据。
+    // 当用户明确要求查询/执行/创建等实时操作时，如果本轮没有任何工具调用但输出大量列表项，
+    // 才判定为从历史记忆中复读数据。纯帮助中心知识问答允许出现步骤列表。
     // 用 text_replace 事件完整替换前端已显示的内容，而不是追加警告——
     // 这样用户看不到任何幻觉数据，体验更干净。
-    if (recordedCalls.length === 0 && !hasFakeToolCall) {
+    if (!skipNoToolListGuard && recordedCalls.length === 0 && !hasFakeToolCall) {
       const listItemCount = (fullText.match(/^\s*[-•*◆▸◇]\s+.+|^\s*\d+[.)、]\s+.+/gm) || []).length;
       if (listItemCount > 8) {
         const replacement =
