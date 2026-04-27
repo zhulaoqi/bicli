@@ -30,6 +30,8 @@ export async function dateyeUserList(db: Database, adapter: PermissionAdapter, a
         username: u.username ?? u.orgUserName ?? u.name,
         email: u.email,
         phone: u.phone,
+        status: u.status ?? u.userStatus ?? u.state,
+        enabled: u.enabled ?? u.enable,
         roles: Array.isArray(u.roleVoList)
           ? u.roleVoList.map((r: any) => ({ id: r.roleId ?? r.id, name: r.roleName ?? r.name }))
           : undefined,

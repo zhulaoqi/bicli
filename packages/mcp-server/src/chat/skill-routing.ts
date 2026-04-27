@@ -43,20 +43,15 @@ function getHelpMatcher(): SkillMatcher | null {
   return helpMatcher;
 }
 
-function shouldUseHelpSkill(userInput: string): boolean {
-  const hasHelpIntent = HELP_INTENT_RE.test(userInput);
-  const hasLiveDataIntent = LIVE_DATA_INTENT_RE.test(userInput);
-
-  if (hasLiveDataIntent && !hasHelpIntent) return false;
-  return true;
-}
-
 export function routeDataEyeHelpSkill<T extends ToolLike>(
   userInput: string,
   permissions: string[],
   tools: T[],
 ): { skill: Skill | null; tools: T[]; skillPrompt?: string } {
-  if (!shouldUseHelpSkill(userInput)) {
+  const hasHelpIntent = HELP_INTENT_RE.test(userInput);
+  const hasLiveDataIntent = LIVE_DATA_INTENT_RE.test(userInput);
+
+  if (hasLiveDataIntent && !hasHelpIntent) {
     return { skill: null, tools };
   }
 
@@ -65,14 +60,21 @@ export function routeDataEyeHelpSkill<T extends ToolLike>(
   if (!skill) return { skill: null, tools };
 
   const allowed = new Set(skill.requiredTools);
-  const routedTools = allowed.size > 0 ? tools.filter((t) => allowed.has(t.name)) : [];
+  const isMixedIntent = hasHelpIntent && hasLiveDataIntent;
+  const routedTools = isMixedIntent
+    ? tools
+    : allowed.size > 0
+      ? tools.filter((t) => allowed.has(t.name))
+      : [];
 
   return {
     skill,
     tools: routedTools,
     skillPrompt: [
       "【当前请求命中 DataEye 帮助中心知识库】",
-      "本轮应基于以下产品知识回答。除非该 skill 显式列出 requiredTools，否则不要调用任何工具，也不要编造实时数据。",
+      isMixedIntent
+        ? "本轮是混合意图：产品概念/用法基于以下知识库回答；用户数量、列表、创建/修改等实时或写操作必须调用工具，不能使用历史缓存或推断。"
+        : "本轮是纯产品知识咨询：基于以下知识库回答。除非该 skill 显式列出 requiredTools，否则不要调用任何工具，也不要编造实时数据。",
       "",
       skill.content,
     ].join("\n"),

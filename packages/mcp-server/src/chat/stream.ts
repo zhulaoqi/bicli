@@ -124,8 +124,8 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
   let fullText = "";
   let errored = false;
 
-  // ── 流式 tool_history 注释过滤器 ──────────────────────────────────────────
-  // LLM 有时会把历史消息里注入的 <!--tool_history:...--> 原样输出到回复中。
+  // ── 流式工具元数据注释过滤器 ────────────────────────────────────────────────
+  // LLM 有时会把历史消息里注入的 <!--tool_history:...--> 等系统注释原样输出。
   // 这里用状态机在 text-delta 层面把它过滤掉，不让它到达前端。
   let commentBuf = "";     // 正在缓冲中的潜在注释
   let inComment = false;   // 是否处于 <!-- 内部
@@ -160,15 +160,15 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
         // 在 <!-- 内部，等待 -->
         commentBuf += ch;
         if (commentBuf.endsWith("-->")) {
-          // 判断是否是 tool_history 注释
-          if (/<!--[\s\S]*?tool_history:[\s\S]*?-->/.test(commentBuf)) {
+          // 判断是否是工具元数据注释
+          if (/<!--[\s\S]*?tool_(history|call|result):[\s\S]*?-->/i.test(commentBuf)) {
             // 丢弃，同时跳过紧跟的 \n
             commentBuf = "";
             inComment = false;
             // 如果下一个字符是换行也一起吞掉
             if (i + 1 < chunk.length && chunk[i + 1] === "\n") i++;
           } else {
-            // 非 tool_history 注释，原样输出
+            // 非工具元数据注释，原样输出
             flushTextDelta(commentBuf);
             commentBuf = "";
             inComment = false;
@@ -240,6 +240,7 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
             name: part.toolName,
             result: part.output,
             duration,
+            status: toolSuccess ? "done" : "error",
           });
           break;
         }
@@ -250,8 +251,8 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
       }
     }
 
-    // 流结束后把过滤器缓冲区剩余内容 flush（非 tool_history 的残留注释原样输出）
-    if (commentBuf && !(/<!--[\s\S]*?tool_history:/.test(commentBuf))) {
+    // 流结束后把过滤器缓冲区剩余内容 flush（非工具元数据的残留注释原样输出）
+    if (commentBuf && !(/<!--[\s\S]*?tool_(history|call|result):/i.test(commentBuf))) {
       flushTextDelta(commentBuf);
     }
 
@@ -262,6 +263,7 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
       /```\s*json\s*\{[\s\S]*?"name"\s*:/,
       /<tool_use>/i,
       /<function_calls>/i,
+      /<!--[\s\S]*?tool_(call|result):[\s\S]*?-->/i,
     ];
     const hasFakeToolCall = FAKE_TOOL_CALL_PATTERNS.some((p) => p.test(fullText));
     if (hasFakeToolCall && recordedCalls.length === 0) {
@@ -313,6 +315,10 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
   }
 
   const { clean, followUps } = extractFollowUps(fullText);
+  if (clean !== fullText) {
+    sseSend(res, "text_replace", { content: clean });
+    fullText = clean;
+  }
 
   if (clean || recordedCalls.length > 0) {
     // ── 历史消息截断：防止大量工具数据存入 history 被 LLM 复读 ──────────────
