@@ -60,17 +60,19 @@ ${toolList}
 1. 所有工具调用已自动注入身份和 token，无需手动传递认证信息
 2. 查询项目/产品/事件，必须先调 dataeye_project_list 确认有权访问的范围
 3. SQL 查询必须先调 dataeye_datasource_list 获取 sourceId
-4. 查看已保存分析：直接调 dataeye_analysis_list（不传 projectId 即跨全部项目查询），再调 dataeye_analysis_execute 执行
+4. 查看已保存自助分析/事件分析/漏斗分析/留存分析：直接调 dataeye_analysis_list（不传 projectId 即跨全部项目查询），再调 dataeye_analysis_execute 执行
 ⛔ 禁止用循环逐个项目调 dataeye_analysis_list——该接口支持跨全部项目一次性查询，不传 projectId 即可
-5. 工具返回错误时原文转述，不要自行推测原因
-6. 使用中文回复
-7. 写操作工具调用完成后，必须立即基于工具返回值向用户输出结果（✅ 成功 或 ❌ 失败原因）。
+5. 查询组织用户/用户列表/用户数量：使用 dataeye_user_list。不要用 dataeye_analysis_list 查询用户，也不要把“用户列表有多少用户”理解成自助分析列表。
+6. 创建用户：先收集 displayName/email/是否管理员/角色等必要信息；需要角色时先调用 dataeye_role_list。未收齐信息时先提问，不要直接创建。
+7. 工具返回错误时原文转述，不要自行推测原因
+8. 使用中文回复
+9. 写操作工具调用完成后，必须立即基于工具返回值向用户输出结果（✅ 成功 或 ❌ 失败原因）。
 
 【必须调用工具的触发规则（系统会自动检测并纠偏）】
 
 以下任何一类请求，必须先调工具再回答，不得跳过：
 ▸ "有哪些"/"列出"/"帮我看看"/"查一下"/"我有多少"/"我的XXX"
-▸ "帮我执行"/"跑一下"/"看结果"/"分析一下"
+▸ "帮我执行"/"跑一下"/"看结果"
 ▸ 提到任何时间范围：今天、昨天、近N天、本周、本月
 ▸ 提到具体名称/ID 并要求查询或操作（如"ID=2711 执行"、"名为XXX的分析"）
 ▸ "继续"/"还有哪些"/"列出剩余"/"下一页"
@@ -83,7 +85,9 @@ ${toolList}
 
 用户问「帮我执行注册转化漏斗」：先调用 dataeye_project_list，再调用 dataeye_analysis_list 找到 analysisId，最后调用 dataeye_analysis_execute 执行并解读结果。
 
-用户说「帮我创建用户张三，角色数据分析师」：先调用 dataeye_role_list 查找角色 ID，然后向用户展示操作摘要并询问"确认执行？"，收到确认后调用 dataeye_user_create，最后基于工具返回值告知结果。
+用户问「用户列表有多少用户」：调用 dataeye_user_list，基于返回的 total 回答。不要调用 dataeye_analysis_list。
+
+用户说「帮我创建用户张三，角色数据分析师」：先调用 dataeye_role_list 查找角色 ID；如果缺少邮箱/手机号/是否管理员等必填或重要信息，先向用户提问；信息齐全后展示操作摘要并询问"确认执行？"，收到确认后调用 dataeye_user_create，最后基于工具返回值告知结果。
 
 【绝对禁止的幻觉行为】
   × 未调工具就输出"✅ 成功"/"已创建"等字样
@@ -99,7 +103,9 @@ Datart 是可视化看板系统，与 DataEye 是独立服务，共用登录 Tok
 
 【重要】术语区分：
 - 用户说"看板"/"数据看板"/"Datart 看板" → 使用 datart_* 工具（datart_dashboard_list 等）
-- 用户说"分析"/"自助分析"/"事件分析"/"漏斗分析"/"留存分析" → 使用 dataeye_analysis_* 工具
+- 用户说"自助分析"/"事件分析"/"漏斗分析"/"留存分析"/"已保存分析" → 使用 dataeye_analysis_* 工具
+- 用户说"用户"/"用户列表"/"组织用户"/"成员"/"有多少用户" → 使用 dataeye_user_list / dataeye_user_create / dataeye_role_list 等用户管理工具
+- 用户说"分析一下"只是普通动词，不等于"自助分析列表"，不要因此调用 dataeye_analysis_list
 
 已支持的 Datart 工具（真实 MCP 实现）：
 - 看板列表：datart_dashboard_list（必传 orgId）
@@ -118,20 +124,59 @@ Datart 工具使用规范：
 ⛔ 如果 Datart 工具返回错误，不要编造成功结果，直接如实反馈错误信息。
 
 【后续建议】
-每次回复末尾输出 3 个建议问题，格式严格如下（单独一行，无多余说明）：
+每次回复末尾必须输出 3 个建议问题，且只能使用隐藏协议，不要把建议以"如需我帮您"/"您可以"/项目符号列表等可见文本展示。
+格式严格如下（单独一行，无多余说明）：
 __FOLLOWUPS__["建议1","建议2","建议3"]__END__`;
 }
 
 export function extractFollowUps(text: string): { clean: string; followUps: string[] } {
   const m = text.match(/(?:__)?FOLLOWUPS(?:__)?\s*(\[[\s\S]*?\])\s*(?:__)?END(?:__)?/i);
-  if (!m) return { clean: text, followUps: [] };
-  try {
-    const arr = JSON.parse(m[1]);
-    return {
-      clean: text.replace(m[0], "").trim(),
-      followUps: Array.isArray(arr) ? arr.slice(0, 3).map(String) : [],
-    };
-  } catch {
-    return { clean: text.replace(m[0], "").trim(), followUps: [] };
+  if (m) {
+    try {
+      const arr = JSON.parse(m[1]);
+      return {
+        clean: text.replace(m[0], "").trim(),
+        followUps: Array.isArray(arr) ? arr.slice(0, 3).map(String) : [],
+      };
+    } catch {
+      return { clean: text.replace(m[0], "").trim(), followUps: [] };
+    }
   }
+
+  // 兼容模型没有遵守隐藏协议、改用可见建议列表的情况：
+  // 如 “如需我帮您：\n◆ 查询...\n◆ 创建...”
+  const fallback = extractVisibleFollowUps(text);
+  if (fallback) return fallback;
+
+  return { clean: text, followUps: [] };
+}
+
+function extractVisibleFollowUps(text: string): { clean: string; followUps: string[] } | null {
+  const marker = /(如需我帮您|请告诉我|您可以|你可以)[^\n]{0,30}[：:]\s*$/gm;
+  let match: RegExpExecArray | null;
+  let lastMatch: RegExpExecArray | null = null;
+  while ((match = marker.exec(text))) lastMatch = match;
+  if (!lastMatch) return null;
+
+  const start = lastMatch.index;
+  const block = text.slice(start);
+  const lines = block.split(/\r?\n/);
+  const questions: string[] = [];
+
+  for (const line of lines.slice(1)) {
+    const item = line.match(/^\s*(?:[-*◆◇▸•]|\d+[.)、])\s*(.+?)\s*$/);
+    if (!item) {
+      if (questions.length > 0) break;
+      continue;
+    }
+    const value = item[1].trim();
+    if (value) questions.push(value);
+    if (questions.length >= 3) break;
+  }
+
+  if (questions.length === 0) return null;
+
+  // 只移除末尾建议块，保留主体回答。
+  const clean = text.slice(0, start).trim();
+  return { clean, followUps: questions };
 }

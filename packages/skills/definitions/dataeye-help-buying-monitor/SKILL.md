@@ -1,6 +1,6 @@
 ---
 name: dataeye-help-buying-monitor
-description: 回答数眼 DataEye 买量监控、投放效果、ROAS、ROI、ROSE误写、用户列表、看板口径、数据更新时间、时区、币种和维度相关的产品知识问题。用于“买量监控是什么/能干啥/怎么用”“ROAS是什么”“ROSE是什么”“ROI怎么看”“投放效果怎么看”等帮助中心咨询；真实用户数量、报表数据和看板结果必须走 MCP 工具。
+description: 回答数眼 DataEye 买量监控、投放效果、ROAS、ROI、ROSE误写、看板口径、数据更新时间、时区、币种和维度相关的产品知识问题。用于“买量监控是什么/能干啥/怎么用”“ROAS是什么”“ROSE是什么”“ROI怎么看”“投放效果怎么看”等帮助中心咨询；真实用户数量、报表数据和看板结果必须走 MCP 工具。
 triggers:
   - 买量监控
   - 买量看板
@@ -8,7 +8,6 @@ triggers:
   - ROAS
   - ROSE
   - ROI
-  - 用户列表
   - 数据更新时间
   - 时区
   - 币种
