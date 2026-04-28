@@ -165,6 +165,14 @@ export function buildPageContextPrompt(context: PageContext | null): string {
   return lines.join("\n");
 }
 
+export function hasPageContextEvidence(context: PageContext | null): boolean {
+  if (!context || context.isStale) return false;
+  return (context.charts ?? []).some((chart) => {
+    if (chart.status && chart.status !== "ready") return false;
+    return Boolean(chart.topRows?.length || chart.metrics?.length);
+  });
+}
+
 function sanitizeChart(input: unknown): ChartContext | null {
   if (!input || typeof input !== "object") return null;
   const raw = input as Record<string, unknown>;

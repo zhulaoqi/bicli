@@ -1,5 +1,6 @@
 import { formatSuccess, formatError, withAuth } from "./base.js";
 import { dateyeRequest } from "./dataeye-proxy.js";
+import { buildSavedAnalysisQuery, type SavedAnalysisDetail } from "./saved-analysis-query-builder.js";
 import type { Database } from "../db/connection.js";
 import type { PermissionAdapter } from "../auth/adapter.js";
 
@@ -10,77 +11,6 @@ const ANALYSIS_TYPE: Record<number, string> = {
   3: "留存分析",
   4: "用户行为分析",
 };
-
-// 各类型对应执行接口
-const EXECUTE_ENDPOINT: Record<number, string> = {
-  1: "/api/my-query-event/report",
-  2: "/api/funnel-analysis/report",
-  3: "/api/my-query-retention/report",
-};
-
-type SavedAnalysisDetail = {
-  id?: number;
-  name?: string;
-  type: number;
-  projectId?: number;
-  productId?: number;
-  productIds?: string | null;
-  timeCompareType?: number | null;
-  granularityType?: number | null;
-  timeSpan?: number | null;
-  timeSpanEnd?: number | null;
-  queryStartTime?: string | null;
-  queryEndTime?: string | null;
-  timeFilterType?: number | null;
-  timezone?: number | null;
-  isDefault?: number | null;
-  prp?: string | null;
-  eventAnalysisQuery?: Record<string, unknown> | null;
-  funnelAnalysisQueryParam?: Record<string, unknown> | null;
-  retentionAnalysisQuery?: Record<string, unknown> | null;
-};
-
-function assignIfPresent(target: Record<string, unknown>, key: string, value: unknown) {
-  if (value !== undefined && value !== null && value !== "") {
-    target[key] = value;
-  }
-}
-
-export function buildSavedAnalysisQueryParam(detail: SavedAnalysisDetail): Record<string, unknown> | null {
-  let queryParam: Record<string, unknown> | null = null;
-  if (detail.type === 1) queryParam = detail.eventAnalysisQuery ?? null;
-  else if (detail.type === 2) queryParam = detail.funnelAnalysisQueryParam ?? null;
-  else if (detail.type === 3) queryParam = detail.retentionAnalysisQuery ?? null;
-
-  if (!queryParam) {
-    try {
-      queryParam = detail.prp ? JSON.parse(detail.prp) : null;
-    } catch {
-      queryParam = null;
-    }
-  }
-
-  if (!queryParam) return null;
-
-  const tableFields: Record<string, unknown> = {};
-  assignIfPresent(tableFields, "projectId", detail.projectId);
-  assignIfPresent(tableFields, "productId", detail.productId);
-  assignIfPresent(tableFields, "productIds", detail.productIds);
-  assignIfPresent(tableFields, "timeCompareType", detail.timeCompareType);
-  assignIfPresent(tableFields, "granularityType", detail.granularityType);
-  assignIfPresent(tableFields, "timeSpan", detail.timeSpan);
-  assignIfPresent(tableFields, "timeSpanEnd", detail.timeSpanEnd);
-  assignIfPresent(tableFields, "queryStartTime", detail.queryStartTime);
-  assignIfPresent(tableFields, "queryEndTime", detail.queryEndTime);
-  assignIfPresent(tableFields, "timeFilterType", detail.timeFilterType);
-  assignIfPresent(tableFields, "timezone", detail.timezone);
-  assignIfPresent(tableFields, "isDefault", detail.isDefault);
-
-  return {
-    ...queryParam,
-    ...tableFields,
-  };
-}
 
 /**
  * 执行已保存的自助分析，返回结果摘要
@@ -110,27 +40,30 @@ export async function dateyeAnalysisExecute(db: Database, adapter: PermissionAda
     }
 
     const typeName = ANALYSIS_TYPE[detail.type] ?? `类型${detail.type}`;
-    const endpoint = EXECUTE_ENDPOINT[detail.type];
+    const built = buildSavedAnalysisQuery(detail);
 
-    // 用户行为分析暂不支持直接执行（接口复杂）
-    if (!endpoint) {
+    if (!built.ok && detail.type === 4) {
       return formatError(
         "UNSUPPORTED",
         `「${typeName}」类型暂不支持 AI 直接执行，请在 DataEye 平台界面操作`,
       );
     }
 
-    // Step 2: 选择请求体。prp 是类型配置，self_analysis_event 表字段是通用查询条件，执行时必须合并。
-    const queryParam = buildSavedAnalysisQueryParam(detail);
-
-    if (!queryParam) {
-      return formatError("INVALID_STATE", `分析「${detail.name}」的查询参数为空，可能尚未完成配置`);
+    if (!built.ok) {
+      return formatError("INVALID_STATE", built.message);
     }
 
+    console.log("[analysis-execute]", {
+      analysisId: detail.id,
+      type: detail.type,
+      endpoint: built.endpoint,
+      ...summarizeExecutionBody(built.body),
+    });
+
     // Step 3: 执行分析
-    const rawResult = await dateyeRequest<Record<string, unknown>>(endpoint, context, {
+    const rawResult = await dateyeRequest<Record<string, unknown>>(built.endpoint, context, {
       method: "POST",
-      body: queryParam,
+      body: built.body,
     });
 
     // Step 4: 提取摘要
@@ -150,6 +83,18 @@ export async function dateyeAnalysisExecute(db: Database, adapter: PermissionAda
       ...(chartData ? { __chart__: chartData } : {}),
     });
   });
+}
+
+function summarizeExecutionBody(body: Record<string, unknown>) {
+  return {
+    projectId: body.projectId,
+    productId: body.productId,
+    indexInfosCount: Array.isArray(body.indexInfos) ? body.indexInfos.length : 0,
+    dimensionInfosCount: Array.isArray(body.dimensionInfos) ? body.dimensionInfos.length : 0,
+    filterInfosCount: Array.isArray(body.filterInfos) ? body.filterInfos.length : 0,
+    hasQueryStartTime: Boolean(body.queryStartTime),
+    hasQueryEndTime: Boolean(body.queryEndTime),
+  };
 }
 
 /**

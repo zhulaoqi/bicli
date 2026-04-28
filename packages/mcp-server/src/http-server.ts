@@ -15,7 +15,7 @@ import { customModels as customModelsTable } from "./db/schema.js";
 import { eq, and } from "drizzle-orm";
 import { buildSystemPrompt as buildSP } from "./chat/system-prompt.js";
 import { routeDataEyeHelpSkill } from "./chat/skill-routing.js";
-import { buildPageContextPrompt, sanitizePageContext } from "./chat/page-context.js";
+import { buildPageContextPrompt, hasPageContextEvidence, sanitizePageContext } from "./chat/page-context.js";
 
 const PORT = parseInt(process.env.MCP_HTTP_PORT || "3211", 10);
 const HOST = process.env.MCP_HTTP_HOST || "0.0.0.0";
@@ -546,7 +546,7 @@ async function main() {
       history,
       tools: toolSpecs,
       store,
-      skipNoToolListGuard: routed.skill?.name.startsWith("dataeye-help-") ?? false,
+      skipNoToolListGuard: (routed.skill?.name.startsWith("dataeye-help-") ?? false) || hasPageContextEvidence(sanitizedPageContext.context),
       customConfig,
     });
   } catch (e: any) {
