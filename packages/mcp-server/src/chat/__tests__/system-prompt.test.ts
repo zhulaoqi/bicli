@@ -47,8 +47,9 @@ describe("buildSystemPrompt", () => {
   it("contains page context usage rules", () => {
     const prompt = buildSystemPrompt({ userId: 1, role: "admin" }, [], []);
 
-    expect(prompt).toContain("当前/这个图/上面数据");
+    expect(prompt).toContain("当前/当前页面/这个图/上面数据/页面数据");
     expect(prompt).toContain("优先使用页面上下文");
+    expect(prompt).toContain("不要因为用户说“分析当前页面/当前图”就误查自助分析列表");
     expect(prompt).toContain("上下文过期");
   });
 });

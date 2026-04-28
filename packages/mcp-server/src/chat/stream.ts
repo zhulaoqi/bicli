@@ -408,10 +408,11 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
       let fallback: string;
       if (recordedCalls.length > 0) {
         const toolNames = recordedCalls.map((r) => r.name).join(", ");
-        fallback = `（已调用工具：${toolNames}，但模型未生成文字回复，请尝试换个问法）`;
+        fallback = `⚠️ 已调用工具（${toolNames}），但模型没有生成最终文字总结。\n\n这通常不是“不支持 function call”，而是工具返回后模型未继续输出、结果过大被截断，或上下文约束过强。请稍后重试，或缩小问题范围。`;
       } else {
-        // 模型返回空响应（finishReason=other），通常是不支持工具格式或系统提示词过长
-        fallback = `⚠️ 模型未返回任何内容（可能原因：当前模型不支持工具调用格式，或上下文过长被截断）。\n\n建议切换回 qwen-plus / qwen-max 等支持工具调用的模型。`;
+        // 模型返回空响应（finishReason=other），常见原因是上下文过长、模型服务返回空流，
+        // 只有在出现 fake tool-call 文本时才应提示“不支持 function calling”。
+        fallback = `⚠️ 模型未返回任何内容。\n\n可能原因：上下文过长被截断、模型服务返回空流，或当前请求被模型侧安全/格式策略中止。请缩小问题范围后重试。`;
         console.warn(`[stream] empty response from model=${model}, provider=${provider}`);
       }
       fullText = fallback;
