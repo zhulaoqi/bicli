@@ -15,6 +15,7 @@ import { customModels as customModelsTable } from "./db/schema.js";
 import { eq, and } from "drizzle-orm";
 import { buildSystemPrompt as buildSP } from "./chat/system-prompt.js";
 import { routeDataEyeHelpSkill } from "./chat/skill-routing.js";
+import { buildPageContextPrompt, sanitizePageContext } from "./chat/page-context.js";
 
 const PORT = parseInt(process.env.MCP_HTTP_PORT || "3211", 10);
 const HOST = process.env.MCP_HTTP_HOST || "0.0.0.0";
@@ -410,10 +411,11 @@ async function main() {
     const identity = await resolveIdentityFromReq(req);
     if (!identity) return res.status(401).json({ error: "unauthorized" });
 
-    const { sessionId: rawSid, message, model: reqModel } = req.body as {
+    const { sessionId: rawSid, message, model: reqModel, pageContext } = req.body as {
       sessionId: number | string;
       message: string;
       model?: string;
+      pageContext?: unknown;
     };
     const sid = Number(rawSid);
     if (!message) return res.status(400).json({ error: "message is required" });
@@ -433,6 +435,16 @@ async function main() {
     const token = extractBearerToken(req)!;
     const permissions = await adapter0.getPermissions(identity.role);
     const routed = routeDataEyeHelpSkill(message, permissions, toolDefCache);
+    const sanitizedPageContext = sanitizePageContext(pageContext);
+    const pageContextPrompt = buildPageContextPrompt(sanitizedPageContext.context);
+    if (sanitizedPageContext.context) {
+      console.log("[page-context]", {
+        pageType: sanitizedPageContext.context.pageType,
+        selectedChartId: sanitizedPageContext.context.selectedChartId,
+        chartCount: sanitizedPageContext.context.charts?.length ?? 0,
+        warnings: sanitizedPageContext.warnings,
+      });
+    }
     const systemPrompt = [
       buildSP(
         { userId: identity.userId, role: identity.role, orgId: identity.orgId },
@@ -440,6 +452,7 @@ async function main() {
         routed.tools,
       ),
       routed.skillPrompt,
+      pageContextPrompt,
     ].filter(Boolean).join("\n\n---\n\n");
 
     // stream.ts 会在开始时 addMessage(user) — 所以此处只需拿入库前的历史即可

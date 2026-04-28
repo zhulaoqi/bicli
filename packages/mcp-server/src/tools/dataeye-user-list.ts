@@ -2,6 +2,87 @@ import { formatSuccess, withAuth } from "./base.js";
 import { dateyeRequest } from "./dataeye-proxy.js";
 import type { Database } from "../db/connection.js";
 import type { PermissionAdapter } from "../auth/adapter.js";
+import {
+  createBlockId,
+  maskEmail,
+  maskPhone,
+  normalizeTableRows,
+  type TableMessageBlock,
+} from "../chat/message-blocks.js";
+
+interface UserListTableOptions {
+  total?: number;
+  page: number;
+  pageSize: number;
+}
+
+export function buildUserListTableResult(records: any[], options: UserListTableOptions) {
+  const columns = [
+    { key: "username", title: "用户名", dataType: "string" as const },
+    { key: "email", title: "邮箱", dataType: "email" as const, sensitive: true },
+    { key: "phone", title: "手机号", dataType: "phone" as const, sensitive: true },
+    { key: "status", title: "状态", dataType: "status" as const },
+    { key: "roles", title: "角色", dataType: "string" as const },
+  ];
+
+  const tableRows = records.map((u: any) => ({
+    username: u.username ?? u.orgUserName ?? u.name ?? "",
+    email: u.email ? maskEmail(u.email) : "",
+    phone: u.phone ? maskPhone(u.phone) : "",
+    status: u.status ?? u.userStatus ?? u.state ?? u.enabled ?? u.enable ?? "",
+    roles: Array.isArray(u.roleVoList)
+      ? u.roleVoList.map((r: any) => r.roleName ?? r.name).filter(Boolean).slice(0, 5)
+      : [],
+  }));
+
+  const blockId = createBlockId("block_users");
+  const shownRows = tableRows.length;
+  const total = options.total ?? shownRows;
+  const tableBlock: TableMessageBlock = {
+    id: blockId,
+    type: "table",
+    title: "当前组织用户列表",
+    sourceTool: "dataeye_user_list",
+    payload: {
+      columns,
+      rows: normalizeTableRows(columns, tableRows),
+      total,
+      page: options.page,
+      pageSize: options.pageSize,
+      truncated: total > shownRows,
+      masks: { enabled: true, fields: ["email", "phone"] },
+    },
+  };
+
+  return {
+    summary: {
+      total,
+      page: options.page,
+      pageSize: options.pageSize,
+      shownRows,
+      blockId,
+      displayHint: "用户列表已通过结构化表格展示，正文只需总结，不要重复逐条列出。",
+    },
+    __blocks__: [tableBlock],
+  };
+}
+
+export function extractUserRecords(data: any): { records: any[]; total?: number } {
+  if (Array.isArray(data)) {
+    return { records: data, total: data.length };
+  }
+  if (!data || typeof data !== "object") {
+    return { records: [], total: 0 };
+  }
+
+  for (const key of ["records", "rows", "list", "dataList", "items"]) {
+    if (Array.isArray(data[key])) {
+      return { records: data[key], total: Number(data.total ?? data.count ?? data[key].length) };
+    }
+  }
+
+  return { records: [], total: Number(data.total ?? data.count ?? 0) };
+}
 
 /**
  * dataeye 组织用户列表
@@ -23,32 +104,12 @@ export async function dateyeUserList(db: Database, adapter: PermissionAdapter, a
       body,
     });
 
-    // 裁剪返回字段，防止大量用户数据撑爆 LLM 上下文
-    const slim = (list: any[]) =>
-      list.map((u: any) => ({
-        userId: u.userId ?? u.id,
-        username: u.username ?? u.orgUserName ?? u.name,
-        email: u.email,
-        phone: u.phone,
-        status: u.status ?? u.userStatus ?? u.state,
-        enabled: u.enabled ?? u.enable,
-        roles: Array.isArray(u.roleVoList)
-          ? u.roleVoList.map((r: any) => ({ id: r.roleId ?? r.id, name: r.roleName ?? r.name }))
-          : undefined,
-      }));
-
-    if (data && typeof data === "object" && Array.isArray((data as any).records)) {
-      return formatSuccess({
-        total: (data as any).total,
-        page: Number(page),
-        pageSize: Number(pageSize),
-        records: slim((data as any).records),
-      });
-    }
-    if (Array.isArray(data)) {
-      return formatSuccess(slim(data));
-    }
-    return formatSuccess(data);
+    const { records, total } = extractUserRecords(data);
+    return formatSuccess(buildUserListTableResult(records, {
+      total,
+      page: Number(page),
+      pageSize: Number(pageSize),
+    }));
   });
 }
 

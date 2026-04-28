@@ -5,6 +5,7 @@ import type { Response } from "express";
 import type { SessionStore, ToolCallRecord } from "./session-store.js";
 import { extractFollowUps } from "./system-prompt.js";
 import { runRepairRound } from "./response-repair.js";
+import { extractMessageBlocksFromToolResult } from "./message-blocks.js";
 
 export interface StreamToolSpec {
   name: string;
@@ -36,6 +37,14 @@ export interface StreamChatParams {
 function sseSend(res: Response, event: string, data: unknown) {
   res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+function safeSseSend(res: Response, event: string, data: unknown) {
+  try {
+    sseSend(res, event, data);
+  } catch (err) {
+    console.warn(`[stream] failed to send ${event} SSE`, err);
+  }
 }
 
 export async function handleChatStream(params: StreamChatParams): Promise<void> {
@@ -88,10 +97,21 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
           // 拦截 __chart__ 字段：通过单独的 chart_data SSE 发给前端，不进入 LLM 上下文
           let resultForLLM = raw;
           if (typeof raw === "string") {
+            const { blocks, resultForLLM: withoutBlocks } = extractMessageBlocksFromToolResult(raw);
+            if (blocks.length > 0) {
+              for (const block of blocks) {
+                safeSseSend(res, "message_block", {
+                  ...block,
+                  sourceTool: block.sourceTool ?? t.name,
+                });
+              }
+              resultForLLM = withoutBlocks;
+            }
+
             try {
-              const parsed = JSON.parse(raw);
+              const parsed = JSON.parse(resultForLLM);
               if (parsed?.data?.__chart__) {
-                sseSend(res, "chart_data", {
+                safeSseSend(res, "chart_data", {
                   toolCallId: t.name + "_" + Date.now(),
                   toolName: t.name,
                   ...parsed.data.__chart__,
