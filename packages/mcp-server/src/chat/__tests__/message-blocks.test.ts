@@ -4,6 +4,7 @@ import {
   maskEmail,
   maskPhone,
   normalizeTableRows,
+  type StepsMessageBlock,
   type TableMessageBlock,
 } from "../message-blocks.js";
 
@@ -76,5 +77,62 @@ describe("message block helpers", () => {
         },
       }),
     );
+  });
+
+  it("extracts steps blocks for structured process rendering", () => {
+    const block: StepsMessageBlock = {
+      id: "block_steps_1",
+      type: "steps",
+      title: "排查步骤",
+      payload: {
+        steps: [
+          { title: "确认问题", status: "finish" },
+          { title: "查询日志", status: "process", description: "查看最近一次调用" },
+        ],
+      },
+    };
+
+    const raw = JSON.stringify({
+      success: true,
+      data: {
+        summary: { blockId: block.id },
+        __blocks__: [block],
+      },
+    });
+
+    expect(extractMessageBlocksFromToolResult(raw).blocks).toEqual([block]);
+  });
+
+  it("keeps structurally valid future blocks for frontend fallback rendering", () => {
+    const block = {
+      id: "block_future_1",
+      type: "future_widget",
+      title: "未来组件",
+      payload: { demo: true },
+    };
+
+    const raw = JSON.stringify({
+      success: true,
+      data: { __blocks__: [block] },
+    });
+
+    expect(extractMessageBlocksFromToolResult(raw).blocks).toEqual([block]);
+  });
+
+  it("filters malformed blocks", () => {
+    const raw = JSON.stringify({
+      success: true,
+      data: {
+        __blocks__: [
+          { type: "steps", payload: { steps: [] } },
+          { id: "missing_payload", type: "steps" },
+          { id: "valid", type: "steps", payload: { steps: [] } },
+        ],
+      },
+    });
+
+    expect(extractMessageBlocksFromToolResult(raw).blocks).toEqual([
+      { id: "valid", type: "steps", payload: { steps: [] } },
+    ]);
   });
 });

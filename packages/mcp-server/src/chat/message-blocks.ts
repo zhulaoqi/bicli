@@ -1,8 +1,19 @@
-export type MessageBlockType = "table" | "chart" | "metric_cards" | "summary" | "warning" | "form_request" | "confirmation";
+export type MessageBlockType =
+  | "table"
+  | "chart"
+  | "metric_cards"
+  | "steps"
+  | "timeline"
+  | "diagram"
+  | "callout"
+  | "summary"
+  | "warning"
+  | "form_request"
+  | "confirmation";
 
 export interface MessageBlockBase<TPayload = unknown> {
   id: string;
-  type: MessageBlockType;
+  type: MessageBlockType | (string & {});
   title?: string;
   sourceTool?: string;
   toolCallId?: string;
@@ -42,9 +53,19 @@ export interface TableBlockPayload {
   }>;
 }
 
+export interface StepsBlockPayload {
+  steps: Array<{
+    title: string;
+    description?: string;
+    status?: "wait" | "process" | "finish" | "error";
+  }>;
+  orientation?: "vertical" | "horizontal";
+}
+
 export type TableMessageBlock = MessageBlockBase<TableBlockPayload> & { type: "table" };
 export type ChartMessageBlock = MessageBlockBase & { type: "chart" };
-export type MessageBlock = TableMessageBlock | ChartMessageBlock | MessageBlockBase;
+export type StepsMessageBlock = MessageBlockBase<StepsBlockPayload> & { type: "steps" };
+export type MessageBlock = TableMessageBlock | ChartMessageBlock | StepsMessageBlock | MessageBlockBase;
 
 export function createBlockId(prefix = "block"): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
