@@ -58,12 +58,12 @@ export async function datartDataExecute(db: Database, adapter: PermissionAdapter
 }
 
 export const datartDataExecuteDef = {
-  name: "datart_data_execute",
-  description: "执行 Datart 视图/图表的数据查询，返回结果摘要（前5行 + 列信息）",
+  name: "dataeye_chart_data_execute",
+  description: "执行 DataEye 数据视图或高级图表的数据查询，返回结果摘要（前5行 + 列信息）",
   inputSchema: {
     type: "object",
     properties: {
-      viewId: { type: "string", description: "视图 ID，从 datart_dashboard_detail 或 datart_view_list 获取" },
+      viewId: { type: "string", description: "数据视图 ID，从看板详情或数据视图列表工具获取" },
       vizId: { type: "string", description: "图表 ID（可选）" },
       vizType: { type: "string", description: "DATACHART 或 DASHBOARD", default: "DATACHART" },
       chartName: { type: "string", description: "图表名称（用于显示，可选）" },

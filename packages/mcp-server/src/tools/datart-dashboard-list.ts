@@ -3,7 +3,7 @@ import { datartRequest } from "./datart-proxy.js";
 import type { Database } from "../db/connection.js";
 import type { PermissionAdapter } from "../auth/adapter.js";
 
-// Datart Folder 实体实际字段（rel_type: "DASHBOARD"|"DATACHART"|"FOLDER"）
+// 可视化目录实体实际字段（rel_type: "DASHBOARD"|"DATACHART"|"FOLDER"）
 type FolderItem = {
   id: string;
   name: string;
@@ -18,7 +18,7 @@ type FolderItem = {
 
 export async function datartDashboardList(db: Database, adapter: PermissionAdapter, args: Record<string, unknown>) {
   return withAuth(db, adapter, args, [], async (_db, _args, context) => {
-    // Datart 与 DataEye 共用同一套 orgId（org 表是 DataEye 的视图）
+    // 可视化资产与 DataEye 共用同一套 orgId（org 表是 DataEye 的视图）
     const orgId = (_args.orgId as string) || context.orgId;
     if (!orgId) return formatError("INVALID_ARGS", "orgId is required");
 
@@ -50,8 +50,8 @@ export async function datartDashboardList(db: Database, adapter: PermissionAdapt
 }
 
 export const datartDashboardListDef = {
-  name: "datart_dashboard_list",
-  description: "获取 Datart 组织下的看板列表（Datart 与 DataEye 共用 orgId，不需要单独传）",
+  name: "dataeye_dashboard_list",
+  description: "获取 DataEye 数据看板列表，用于回答有哪些看板、看板数据、看板结果等问题",
   inputSchema: {
     type: "object",
     properties: {

@@ -1,6 +1,6 @@
 ---
-name: datart-share
-description: 为 Datart 看板或图表创建分享链接，支持无需登录访问、密码保护、角色限制等访问模式，并可设置有效期。适用于"帮我分享这个看板"、"生成看板分享链接"、"创建外部访问链接"、"给别人看我的看板"等场景。
+name: dataeye-share
+description: 为 DataEye 数据看板或高级图表创建分享链接，支持无需登录访问、密码保护、角色限制等访问模式，并可设置有效期。适用于"帮我分享这个看板"、"生成看板分享链接"、"创建外部访问链接"、"给别人看我的看板"等场景。
 triggers:
   - 分享看板
   - 生成分享链接
@@ -12,12 +12,12 @@ triggers:
   - 公开看板
   - 看板链接
 requiredTools:
-  - datart_dashboard_list
-  - datart_share_create
-  - datart_share_list
+  - dataeye_dashboard_list
+  - dataeye_share_create
+  - dataeye_share_list
 ---
 
-# Datart 看板分享 Skill
+# DataEye 数据看板分享 Skill
 
 帮助用户为看板或图表创建分享链接，配置访问权限和有效期。
 
@@ -27,7 +27,7 @@ requiredTools:
 |--------------------|------|---------|
 | `FREE` | 无需登录，任何人可访问 | 公开报告、外部展示 |
 | `CODE` | 需要输入密码 | 有限分享，防止随意访问 |
-| `LOGIN` | 必须登录 Datart 账号 | 内部同事 |
+| `LOGIN` | 必须登录账号 | 内部同事 |
 | `ROLE` | 仅指定角色可访问 | 权限精细控制 |
 
 默认推荐 **`FREE`**（无密码），如用户提到"加密码"则用 `CODE`。
@@ -37,7 +37,7 @@ requiredTools:
 ### 场景：用户说"帮我分享 [看板名] 的链接"
 
 ```
-步骤1: datart_dashboard_list() → 找到目标看板 ID
+步骤1: dataeye_dashboard_list() → 找到目标看板 ID
 
 步骤2: 收集分享参数（缺少时询问）：
    - 访问方式：无密码 / 需要密码 / 仅登录用户
@@ -45,7 +45,7 @@ requiredTools:
 
 步骤3: 展示确认摘要
 
-步骤4: 用户确认 → datart_share_create(...)
+步骤4: 用户确认 → dataeye_share_create(...)
 
 步骤5: 构造并返回完整分享 URL
 ```
@@ -69,7 +69,7 @@ requiredTools:
 ✅ 分享链接已创建！
 
 🔗 分享地址：
-${DATART_FRONTEND_URL}/shareDashboard/{authorizedToken}
+{可视化服务前端地址}/shareDashboard/{authorizedToken}
 
 访问方式：无需登录
 有效期至：2026-04-23
@@ -95,7 +95,7 @@ ${DATART_FRONTEND_URL}/shareDashboard/{authorizedToken}
 ## 查看已有分享
 
 ```
-步骤1: datart_share_list(vizId=<dashboardId>)
+步骤1: dataeye_share_list(vizId=<dashboardId>)
    → 列出该看板下的所有分享链接
 
 步骤2: 展示列表
@@ -119,7 +119,7 @@ ${DATART_FRONTEND_URL}/shareDashboard/{authorizedToken}
 
 ## 注意事项
 
-- **分享 URL 构造**：`${DATART_FRONTEND_URL}/shareDashboard/{authorizedToken}`，`authorizedToken` 来自创建响应的 `ShareToken.authorizedToken`
+- **分享 URL 构造**：`{可视化服务前端地址}/shareDashboard/{authorizedToken}`，`authorizedToken` 来自创建响应的 `ShareToken.authorizedToken`
 - **有密码时**：`authenticationCode` 字段传入密码，用户分享时需告知对方
 - **expiryDate 格式**：ISO 8601，且必须是未来时间（接口有 `@Future` 校验）
 - 详细 API 参数见 [reference/api.md](reference/api.md)

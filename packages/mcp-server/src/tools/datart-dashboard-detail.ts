@@ -41,12 +41,12 @@ export async function datartDashboardDetail(db: Database, adapter: PermissionAda
 }
 
 export const datartDashboardDetailDef = {
-  name: "datart_dashboard_detail",
-  description: "获取 Datart 看板详情，包含所有图表（datacharts）和关联视图列表",
+  name: "dataeye_dashboard_detail",
+  description: "获取 DataEye 数据看板详情，包含看板中的高级图表和关联数据视图列表",
   inputSchema: {
     type: "object",
     properties: {
-      dashboardId: { type: "string", description: "看板 ID，从 datart_dashboard_list 获取" },
+      dashboardId: { type: "string", description: "看板 ID，从数据看板列表工具获取" },
     },
     required: ["dashboardId"],
   },

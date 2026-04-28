@@ -27,8 +27,8 @@ export async function datartViewList(db: Database, adapter: PermissionAdapter, a
 }
 
 export const datartViewListDef = {
-  name: "datart_view_list",
-  description: "获取 Datart 组织下的数据视图列表（SQL 视图）",
+  name: "dataeye_view_list",
+  description: "获取 DataEye 数据视图列表（SQL 视图），用于查询或创建高级图表前选择数据口径",
   inputSchema: {
     type: "object",
     properties: {

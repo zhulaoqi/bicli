@@ -77,7 +77,7 @@ interface ChartContext {
   title: string;
   chartType: "line" | "bar" | "table" | "funnel" | "heatmap" | "pie" | "pivot" | "unknown";
   status: "ready" | "loading" | "error" | "empty";
-  sourceType: "dashboard" | "self_analysis" | "datart" | "custom";
+  sourceType: "dashboard" | "self_analysis" | "visual_asset" | "custom";
   dataRefId?: string;
   timeRange?: {
     start?: string;
@@ -120,7 +120,7 @@ interface ChartContext {
 interface DataRef {
   id: string;
   kind: "chart_data" | "dashboard_widget" | "analysis_result" | "table_sample";
-  source: "dataeye" | "datart";
+  source: "dataeye" | "visual_asset";
   resourceId?: string | number;
   queryHash?: string;
   paramsDigest?: Record<string, unknown>;

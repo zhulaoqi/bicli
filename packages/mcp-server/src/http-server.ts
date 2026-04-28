@@ -797,7 +797,7 @@ async function initToolHandlers() {
     import("./tools/dataeye-user-create.js"),        // mods[27]
     import("./tools/dataeye-role-create.js"),        // mods[28]
     import("./tools/dataeye-user-assign-role.js"),   // mods[29]
-    // Datart 工具（仅 DATART_API_URL 配置时生效）
+    // 可视化资产工具（仅配置对应 API URL 时生效）
     import("./tools/datart-dashboard-list.js"),      // mods[30]
     import("./tools/datart-dashboard-detail.js"),    // mods[31]
     import("./tools/datart-data-execute.js"),         // mods[32]
@@ -842,20 +842,20 @@ async function initToolHandlers() {
     ["dataeye_user_create",         mods[27].dateyeUserCreate,        mods[27].dateyeUserCreateDef],
     ["dataeye_role_create",         mods[28].dateyeRoleCreate,        mods[28].dateyeRoleCreateDef],
     ["dataeye_user_assign_role",    mods[29].dateyeUserAssignRole,    mods[29].dateyeUserAssignRoleDef],
-    // Datart 工具（条件加载）
+    // 可视化资产工具（条件加载）
     ...(enableDatart ? [
-      ["datart_dashboard_list",     mods[30].datartDashboardList,     mods[30].datartDashboardListDef],
-      ["datart_dashboard_detail",   mods[31].datartDashboardDetail,   mods[31].datartDashboardDetailDef],
-      ["datart_data_execute",       mods[32].datartDataExecute,       mods[32].datartDataExecuteDef],
-      ["datart_data_test_execute",  mods[33].datartDataTestExecute,   mods[33].datartDataTestExecuteDef],
-      ["datart_source_list",        mods[34].datartSourceList,        mods[34].datartSourceListDef],
-      ["datart_view_list",          mods[35].datartViewList,          mods[35].datartViewListDef],
-      ["datart_view_create",        mods[36].datartViewCreate,        mods[36].datartViewCreateDef],
-      ["datart_schedule_list",      mods[37].datartScheduleList,      mods[37].datartScheduleListDef],
-      ["datart_schedule_create",    mods[38].datartScheduleCreate,    mods[38].datartScheduleCreateDef],
-      ["datart_schedule_execute",   mods[39].datartScheduleExecute,   mods[39].datartScheduleExecuteDef],
-      ["datart_share_create",       mods[40].datartShareCreate,       mods[40].datartShareCreateDef],
-      ["datart_org_list",           mods[41].datartOrgList,           mods[41].datartOrgListDef],
+      [mods[30].datartDashboardListDef.name,     mods[30].datartDashboardList,     mods[30].datartDashboardListDef],
+      [mods[31].datartDashboardDetailDef.name,   mods[31].datartDashboardDetail,   mods[31].datartDashboardDetailDef],
+      [mods[32].datartDataExecuteDef.name,       mods[32].datartDataExecute,       mods[32].datartDataExecuteDef],
+      [mods[33].datartDataTestExecuteDef.name,   mods[33].datartDataTestExecute,   mods[33].datartDataTestExecuteDef],
+      [mods[34].datartSourceListDef.name,        mods[34].datartSourceList,        mods[34].datartSourceListDef],
+      [mods[35].datartViewListDef.name,          mods[35].datartViewList,          mods[35].datartViewListDef],
+      [mods[36].datartViewCreateDef.name,        mods[36].datartViewCreate,        mods[36].datartViewCreateDef],
+      [mods[37].datartScheduleListDef.name,      mods[37].datartScheduleList,      mods[37].datartScheduleListDef],
+      [mods[38].datartScheduleCreateDef.name,    mods[38].datartScheduleCreate,    mods[38].datartScheduleCreateDef],
+      [mods[39].datartScheduleExecuteDef.name,   mods[39].datartScheduleExecute,   mods[39].datartScheduleExecuteDef],
+      [mods[40].datartShareCreateDef.name,       mods[40].datartShareCreate,       mods[40].datartShareCreateDef],
+      [mods[41].datartOrgListDef.name,           mods[41].datartOrgList,           mods[41].datartOrgListDef],
     ] as Array<[string, any, any]> : []),
   ];
 

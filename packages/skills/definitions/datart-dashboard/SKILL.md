@@ -1,6 +1,6 @@
 ---
-name: datart-dashboard
-description: 查询 Datart 看板列表、获取看板详情、执行看板图表数据并给出数据解读。用于用户询问"有哪些看板"、"帮我查一下某看板的数据"、"看板结果怎么样"、"分析看板数据"、"输出看板数据"等场景。
+name: dataeye-dashboard
+description: 查询 DataEye 数据看板列表、获取看板详情、执行高级图表数据并给出数据解读。用于用户询问"有哪些看板"、"帮我查一下某看板的数据"、"看板结果怎么样"、"分析看板数据"、"输出看板数据"等场景。
 triggers:
   - 看板
   - 查看板
@@ -12,14 +12,14 @@ triggers:
   - 分析看板
   - 输出看板
 requiredTools:
-  - datart_dashboard_list
-  - datart_dashboard_detail
-  - datart_data_execute
+  - dataeye_dashboard_list
+  - dataeye_dashboard_detail
+  - dataeye_chart_data_execute
 ---
 
-# Datart 看板查询与分析 Skill
+# DataEye 数据看板查询与分析 Skill
 
-帮助用户查找 Datart 看板，执行图表数据查询，并给出数据洞察。
+帮助用户查找 DataEye 数据看板，执行高级图表数据查询，并给出数据洞察。
 
 ## 工作流程
 
@@ -28,7 +28,7 @@ requiredTools:
 **直接调用，不要先说话：**
 
 ```
-步骤1: datart_dashboard_list(orgId=<当前orgId>)
+步骤1: dataeye_dashboard_list(orgId=<当前orgId>)
    → 获取看板目录树，提取所有 vizType=DASHBOARD 的条目
 
 步骤2: 整理并展示看板列表
@@ -48,12 +48,12 @@ requiredTools:
 ### 场景二：用户说"帮我看下[看板名称]的数据"
 
 ```
-步骤1: datart_dashboard_list() → 找到目标看板 ID
+步骤1: dataeye_dashboard_list() → 找到目标看板 ID
 
-步骤2: datart_dashboard_detail(dashboardId=<id>)
+步骤2: dataeye_dashboard_detail(dashboardId=<id>)
    → 获取看板结构，提取所有 widget（图表部件）和关联的 viewId
 
-步骤3: 对核心 widget 调用 datart_data_execute(viewId=<id>, ...)
+步骤3: 对核心 widget 调用 dataeye_chart_data_execute(viewId=<id>, ...)
    → 获取各图表数据
 
 步骤4: 汇总解读，输出结论
@@ -100,7 +100,7 @@ requiredTools:
 
 | 情况 | 处理 |
 |------|------|
-| 看板列表为空 | "当前组织下暂无看板，请先在 Datart 创建看板" |
+| 看板列表为空 | "当前组织下暂无看板，请先创建数据看板" |
 | 找不到指定名称 | 列出名称相似的看板供选择 |
 | 图表数据为空 | "该图表暂无数据，可能是时间范围或数据源问题" |
 | 执行超时 | "数据量较大，建议缩短时间范围后重试" |

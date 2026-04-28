@@ -49,8 +49,8 @@ export async function datartScheduleCreate(db: Database, adapter: PermissionAdap
 }
 
 export const datartScheduleCreateDef = {
-  name: "datart_schedule_create",
-  description: "在 Datart 中创建定时推送任务（EMAIL/WECHAT/DINGDING），支持定时发送看板截图/报表",
+  name: "dataeye_schedule_create",
+  description: "创建 DataEye 定时推送任务（EMAIL/WECHAT/DINGDING），支持定时发送数据看板截图或报表",
   inputSchema: {
     type: "object",
     properties: {

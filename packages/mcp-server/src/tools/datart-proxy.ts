@@ -19,8 +19,8 @@ function isRetryable(err: unknown, status?: number): boolean {
 }
 
 /**
- * 代理 Datart 后端 API（JWT 透传，与 DataEye 同一套登录态，自动重试）
- * Datart 统一响应格式: { success: true/false, errCode, message, data }
+ * 代理可视化资产服务 API（JWT 透传，与 DataEye 同一套登录态，自动重试）
+ * 统一响应格式: { success: true/false, errCode, message, data }
  */
 export async function datartRequest<T = unknown>(
   path: string,
@@ -32,7 +32,7 @@ export async function datartRequest<T = unknown>(
   } = {},
 ): Promise<T> {
   const baseUrl = DATART_API_URL().replace(/\/+$/, "");
-  if (!baseUrl) throw new Error("DATART_API_URL not configured. 请在 .env 中设置 DATART_API_URL");
+  if (!baseUrl) throw new Error("Visualization API URL not configured. 请检查可视化服务配置");
 
   let url = `${baseUrl}${path}`;
   if (options.params) {
@@ -52,7 +52,7 @@ export async function datartRequest<T = unknown>(
     }
 
     const headers: Record<string, string> = { Accept: "application/json" };
-    // Datart 的 Authorization header 直接是 token，不加 Bearer 前缀
+    // 可视化资产服务的 Authorization header 直接是 token，不加 Bearer 前缀
     const token = process.env.DATART_API_TOKEN || context.token;
     if (token) headers.Authorization = token;
 
@@ -73,7 +73,7 @@ export async function datartRequest<T = unknown>(
       const resp = await fetch(url, init);
       if (!resp.ok) {
         const text = await resp.text().catch(() => "");
-        const err = new Error(`Datart ${resp.status}: ${text.slice(0, 300)}`);
+        const err = new Error(`Visualization service ${resp.status}: ${text.slice(0, 300)}`);
         if (isRetryable(err, resp.status) && attempt < maxRetries) {
           lastErr = err;
           continue;
@@ -82,17 +82,17 @@ export async function datartRequest<T = unknown>(
       }
 
       const json = await resp.json() as Record<string, unknown>;
-      // Datart 标准格式: { success: true, data: ... } 或 { success: false, message: ... }
+      // 可视化资产服务标准格式: { success: true, data: ... } 或 { success: false, message: ... }
       if (json && typeof json === "object" && "success" in json) {
         if (json.success === false) {
-          throw new Error(`Datart error: ${(json as any).message || (json as any).errCode || "unknown"}`);
+          throw new Error(`Visualization service error: ${(json as any).message || (json as any).errCode || "unknown"}`);
         }
         if ("data" in json) return json.data as T;
       }
       return json as unknown as T;
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
-        const timeoutErr = new Error(`Datart API timeout (${DATART_API_TIMEOUT()}ms): ${url}`);
+        const timeoutErr = new Error(`Visualization API timeout (${DATART_API_TIMEOUT()}ms): ${url}`);
         if (attempt < maxRetries) { lastErr = timeoutErr; continue; }
         throw timeoutErr;
       }

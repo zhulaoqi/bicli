@@ -6,7 +6,7 @@ import type { PermissionAdapter } from "../auth/adapter.js";
 export async function datartDataTestExecute(db: Database, adapter: PermissionAdapter, args: Record<string, unknown>) {
   return withAuth(db, adapter, args, [], async (_db, cleanArgs, context) => {
     const { sourceId, script, size = 50 } = cleanArgs;
-    if (!sourceId) return formatError("INVALID_ARGS", "sourceId is required — 先调 datart_source_list 获取");
+    if (!sourceId) return formatError("INVALID_ARGS", "sourceId is required — 先获取数据源列表");
     if (!script) return formatError("INVALID_ARGS", "script (SQL) is required");
 
     type Dataframe = {
@@ -42,12 +42,12 @@ export async function datartDataTestExecute(db: Database, adapter: PermissionAda
 }
 
 export const datartDataTestExecuteDef = {
-  name: "datart_data_test_execute",
-  description: "在 Datart 中测试执行一条 SQL，返回结果预览（前10行）。用于创建视图前验证 SQL 正确性",
+  name: "dataeye_view_sql_test",
+  description: "测试执行一条数据视图 SQL，返回结果预览（前10行）。用于创建数据视图前验证 SQL 正确性",
   inputSchema: {
     type: "object",
     properties: {
-      sourceId: { type: "string", description: "数据源 ID，从 datart_source_list 获取" },
+      sourceId: { type: "string", description: "数据源 ID，从数据源列表工具获取" },
       script: { type: "string", description: "SQL 查询语句（仅支持 SELECT）" },
       size: { type: "number", description: "最多返回行数，默认 50", default: 50 },
     },

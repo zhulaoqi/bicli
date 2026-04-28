@@ -1,6 +1,6 @@
 ---
-name: datart-view
-description: 帮助用户在 Datart 中执行 SQL 语句查看结果，并将 SQL 保存为数据视图（View）。适用于"帮我执行这条 SQL"、"把这个 SQL 保存为视图"、"创建数据视图"、"新建一个视图"等场景。
+name: dataeye-view
+description: 帮助用户执行 SQL 语句查看结果，并将 SQL 保存为 DataEye 数据视图（View）。适用于"帮我执行这条 SQL"、"把这个 SQL 保存为视图"、"创建数据视图"、"新建一个视图"等场景。
 triggers:
   - 执行SQL
   - 运行SQL
@@ -12,25 +12,25 @@ triggers:
   - SQL查询
   - 查询数据
 requiredTools:
-  - datart_view_list
-  - datart_view_create
-  - datart_data_test_execute
-  - datart_source_list
+  - dataeye_view_list
+  - dataeye_view_create
+  - dataeye_view_sql_test
+  - dataeye_data_source_list
 ---
 
-# Datart 数据视图创建 Skill
+# DataEye 数据视图创建 Skill
 
-帮助用户先测试 SQL，确认结果正确后，将 SQL 保存为 Datart 数据视图，供看板图表调用。
+帮助用户先测试 SQL，确认结果正确后，将 SQL 保存为 DataEye 数据视图，供数据看板和高级图表调用。
 
 ## 工作流程
 
 ### 场景一：用户提供 SQL，要求"执行看看结果"
 
 ```
-步骤1: datart_source_list(orgId=<orgId>)
+步骤1: dataeye_data_source_list(orgId=<orgId>)
    → 列出可用数据源，让用户选择（如只有一个则自动使用）
 
-步骤2: datart_data_test_execute(sourceId=<id>, script=<SQL>, size=100)
+步骤2: dataeye_view_sql_test(sourceId=<id>, script=<SQL>, size=100)
    → 试运行 SQL，返回前 100 行结果
 
 步骤3: 展示结果摘要（列名 + 前5行 + 总行数）
@@ -70,7 +70,7 @@ SQL 执行成功，返回 N 行数据：
    数据源：[sourceName]
    SQL 预览：[前 200 字符]...
 
-步骤2: 用户确认后 → datart_view_create(...)
+步骤2: 用户确认后 → dataeye_view_create(...)
 
 步骤3: 返回创建结果（视图 ID + 名称）
 ```
@@ -78,12 +78,12 @@ SQL 执行成功，返回 N 行数据：
 ### 场景三：用户说"先跑一下 SQL，没问题再保存"
 
 ```
-步骤1: datart_data_test_execute(script=<SQL>, sourceId=<id>)
+步骤1: dataeye_view_sql_test(script=<SQL>, sourceId=<id>)
    → 执行并展示结果
 
 步骤2: "数据符合预期吗？确认后我可以帮您保存为视图。"
 
-步骤3: 用户确认 → 收集视图名称 → datart_view_create(...)
+步骤3: 用户确认 → 收集视图名称 → dataeye_view_create(...)
 ```
 
 ## 错误处理
@@ -94,7 +94,7 @@ SQL 执行成功，返回 N 行数据：
 | 数据源连接失败 | "数据源连接异常，请确认数据源配置正常" |
 | 视图名称重复 | "该名称已存在，请换一个视图名称" |
 | SQL 执行超时 | "查询超时，建议添加 WHERE 条件缩小范围" |
-| 无可用数据源 | "当前组织下没有数据源，请先在 Datart 添加数据源" |
+| 无可用数据源 | "当前组织下没有数据源，请先添加数据源" |
 
 ## 注意事项
 

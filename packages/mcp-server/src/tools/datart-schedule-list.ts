@@ -28,8 +28,8 @@ export async function datartScheduleList(db: Database, adapter: PermissionAdapte
 }
 
 export const datartScheduleListDef = {
-  name: "datart_schedule_list",
-  description: "获取 Datart 定时任务列表（含任务名称、类型、是否启用、Cron 表达式）",
+  name: "dataeye_schedule_list",
+  description: "获取 DataEye 定时任务列表（含任务名称、类型、是否启用、Cron 表达式）",
   inputSchema: {
     type: "object",
     properties: {

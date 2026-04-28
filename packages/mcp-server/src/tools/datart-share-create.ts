@@ -13,7 +13,7 @@ export async function datartShareCreate(db: Database, adapter: PermissionAdapter
       expiryDays = 7,
     } = cleanArgs;
 
-    if (!vizId) return formatError("INVALID_ARGS", "vizId is required — 先调 datart_dashboard_list 获取看板 ID");
+    if (!vizId) return formatError("INVALID_ARGS", "vizId is required — 先获取看板 ID");
 
     const expiryDate = new Date(Date.now() + Number(expiryDays) * 86400_000).toISOString();
 
@@ -35,7 +35,7 @@ export async function datartShareCreate(db: Database, adapter: PermissionAdapter
     const frontendBase = process.env.DATART_FRONTEND_URL || process.env.DATART_API_URL?.replace("/api/v1", "") || "";
     const shareUrl = shareToken.authorizedToken
       ? `${frontendBase}/shareDashboard/${shareToken.authorizedToken}`
-      : "(URL 需手动拼接：{DATART_FRONTEND_URL}/shareDashboard/{authorizedToken})";
+      : "(URL 需根据可视化服务前端地址手动拼接)";
 
     return formatSuccess({
       success: true,
@@ -51,8 +51,8 @@ export async function datartShareCreate(db: Database, adapter: PermissionAdapter
 }
 
 export const datartShareCreateDef = {
-  name: "datart_share_create",
-  description: "为 Datart 看板或图表创建分享链接，支持免密（FREE）、密码（CODE）、登录（LOGIN）三种访问模式",
+  name: "dataeye_share_create",
+  description: "为 DataEye 数据看板或高级图表创建分享链接，支持免密（FREE）、密码（CODE）、登录（LOGIN）三种访问模式",
   inputSchema: {
     type: "object",
     properties: {

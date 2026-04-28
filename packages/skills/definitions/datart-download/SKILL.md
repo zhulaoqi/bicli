@@ -1,5 +1,5 @@
 ---
-name: datart-download
+name: dataeye-download
 description: 提交看板或图表数据的下载任务，轮询等待完成后返回下载链接。适用于"帮我下载看板数据"、"导出这个图表"、"把数据导出成 Excel"、"下载分析结果"等场景。
 triggers:
   - 下载看板
@@ -13,13 +13,13 @@ triggers:
   - 把数据导出
   - 帮我导出
 requiredTools:
-  - datart_dashboard_list
-  - datart_dashboard_detail
-  - datart_download_submit
-  - datart_download_task_list
+  - dataeye_dashboard_list
+  - dataeye_dashboard_detail
+  - dataeye_download_submit
+  - dataeye_download_task_list
 ---
 
-# Datart 看板数据下载 Skill
+# DataEye 数据看板下载 Skill
 
 帮助用户提交下载任务、等待完成并返回可下载链接。
 
@@ -28,20 +28,20 @@ requiredTools:
 ### 场景：用户说"帮我下载 [看板名] 的数据"
 
 ```
-步骤1: datart_dashboard_list() → 找到目标看板 ID
+步骤1: dataeye_dashboard_list() → 找到目标看板 ID
 
-步骤2: datart_dashboard_detail(dashboardId=<id>)
+步骤2: dataeye_dashboard_detail(dashboardId=<id>)
    → 获取看板内的 datacharts 列表（含 viewId）
 
 步骤3: 确认下载范围 + 文件格式（EXCEL 或 CSV），展示摘要让用户确认
 
-步骤4: 用户确认 → datart_download_submit(...)
+步骤4: 用户确认 → dataeye_download_submit(...)
    → 提交下载任务，返回 Download 对象（id + status）
 
-步骤5: datart_download_task_list() → 轮询直到 status = DONE
+步骤5: dataeye_download_task_list() → 轮询直到 status = DONE
 
 步骤6: 返回下载链接
-   下载地址：${DATART_BASE_URL}/api/v1/download/files/{downloadId}
+   下载地址：{可视化服务地址}/api/v1/download/files/{downloadId}
 ```
 
 ### 确认摘要格式
@@ -62,7 +62,7 @@ requiredTools:
 ```
 ✅ 导出完成！
 
-📥 下载链接：${DATART_BASE_URL}/api/v1/download/files/{id}
+📥 下载链接：{可视化服务地址}/api/v1/download/files/{id}
 
 （链接有效期 24 小时，点击即可下载）
 ```

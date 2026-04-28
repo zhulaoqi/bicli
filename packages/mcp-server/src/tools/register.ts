@@ -52,7 +52,7 @@ import { dateyeUserAssignRole, dateyeUserAssignRoleDef } from "./dataeye-user-as
 import { dateyeProductCreate, dateyeProductCreateDef } from "./dataeye-product-create.js";
 import { dateyeAnalysisList, dateyeAnalysisListDef } from "./dataeye-analysis-list.js";
 import { dateyeAnalysisExecute, dateyeAnalysisExecuteDef } from "./dataeye-analysis-execute.js";
-// Datart 工具
+// 可视化资产工具
 import { datartDashboardList, datartDashboardListDef } from "./datart-dashboard-list.js";
 import { datartDashboardDetail, datartDashboardDetailDef } from "./datart-dashboard-detail.js";
 import { datartDataExecute, datartDataExecuteDef } from "./datart-data-execute.js";
@@ -168,7 +168,7 @@ export function registerTools(server: Server, db: Database, adapter: PermissionA
     console.error(`[tools] Dataeye tools enabled (${dateyeTools.length} tools)`);
   }
   if (enableDatart) {
-    console.error(`[tools] Datart tools enabled (${datartTools.length} tools), base: ${process.env.DATART_API_URL}`);
+    console.error(`[tools] Visualization tools enabled (${datartTools.length} tools), base: ${process.env.DATART_API_URL}`);
   }
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({

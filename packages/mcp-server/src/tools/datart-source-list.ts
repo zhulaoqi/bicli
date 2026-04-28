@@ -23,8 +23,8 @@ export async function datartSourceList(db: Database, adapter: PermissionAdapter,
 }
 
 export const datartSourceListDef = {
-  name: "datart_source_list",
-  description: "获取 Datart 组织下的数据源列表，用于创建视图时选择 sourceId",
+  name: "dataeye_data_source_list",
+  description: "获取 DataEye 数据源列表，用于创建数据视图时选择 sourceId",
   inputSchema: {
     type: "object",
     properties: {

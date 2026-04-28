@@ -9,7 +9,7 @@ export async function datartViewCreate(db: Database, adapter: PermissionAdapter,
     const resolvedOrgId = (orgId as string) || context.orgId;
 
     if (!name) return formatError("INVALID_ARGS", "name is required");
-    if (!sourceId) return formatError("INVALID_ARGS", "sourceId is required — 先调 datart_source_list 获取");
+    if (!sourceId) return formatError("INVALID_ARGS", "sourceId is required — 先获取数据源列表");
     if (!script) return formatError("INVALID_ARGS", "script (SQL) is required");
     if (!resolvedOrgId) return formatError("INVALID_ARGS", "orgId is required");
 
@@ -38,13 +38,13 @@ export async function datartViewCreate(db: Database, adapter: PermissionAdapter,
 }
 
 export const datartViewCreateDef = {
-  name: "datart_view_create",
-  description: "在 Datart 中创建数据视图（SQL 视图），建议先用 datart_data_test_execute 验证 SQL 再创建",
+  name: "dataeye_view_create",
+  description: "创建 DataEye 数据视图（SQL 视图），建议先测试执行 SQL 再创建",
   inputSchema: {
     type: "object",
     properties: {
       name: { type: "string", description: "视图名称" },
-      sourceId: { type: "string", description: "数据源 ID，从 datart_source_list 获取" },
+      sourceId: { type: "string", description: "数据源 ID，从数据源列表工具获取" },
       script: { type: "string", description: "SQL 查询语句（仅支持 SELECT）" },
       orgId: { type: "string", description: "组织 ID（不填则使用当前用户组织）" },
       description: { type: "string", description: "视图说明（可选）" },

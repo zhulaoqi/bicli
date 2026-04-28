@@ -6,7 +6,7 @@ import type { PermissionAdapter } from "../auth/adapter.js";
 export async function datartScheduleExecute(db: Database, adapter: PermissionAdapter, args: Record<string, unknown>) {
   return withAuth(db, adapter, args, [], async (_db, cleanArgs, context) => {
     const { scheduleId, action = "execute" } = cleanArgs;
-    if (!scheduleId) return formatError("INVALID_ARGS", "scheduleId is required — 先调 datart_schedule_list 获取");
+    if (!scheduleId) return formatError("INVALID_ARGS", "scheduleId is required — 先获取定时任务列表");
 
     let path: string;
     let method: "POST" | "PUT" = "POST";
@@ -37,12 +37,12 @@ export async function datartScheduleExecute(db: Database, adapter: PermissionAda
 }
 
 export const datartScheduleExecuteDef = {
-  name: "datart_schedule_execute",
-  description: "操作 Datart 定时任务：立即执行(execute)、启动(start)、停止(stop)",
+  name: "dataeye_schedule_execute",
+  description: "操作 DataEye 定时任务：立即执行(execute)、启动(start)、停止(stop)",
   inputSchema: {
     type: "object",
     properties: {
-      scheduleId: { type: "string", description: "任务 ID，从 datart_schedule_list 获取" },
+      scheduleId: { type: "string", description: "任务 ID，从定时任务列表工具获取" },
       action: {
         type: "string",
         enum: ["execute", "start", "stop"],

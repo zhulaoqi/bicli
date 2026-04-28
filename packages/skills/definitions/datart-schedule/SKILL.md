@@ -1,6 +1,6 @@
 ---
-name: datart-schedule
-description: 查看 Datart 定时任务列表、创建新的定时任务（定时推送看板报表/截图/邮件）、立即触发执行、启动/停止任务。适用于"帮我创建定时任务"、"每天定时发送报表"、"设置看板定时推送"、"查看定时任务"等场景。
+name: dataeye-schedule
+description: 查看 DataEye 定时任务列表、创建新的定时任务（定时推送看板报表/截图/邮件）、立即触发执行、启动/停止任务。适用于"帮我创建定时任务"、"每天定时发送报表"、"设置看板定时推送"、"查看定时任务"等场景。
 triggers:
   - 定时任务
   - 定时推送
@@ -15,17 +15,17 @@ triggers:
   - 启动任务
   - 停止任务
 requiredTools:
-  - datart_schedule_list
-  - datart_schedule_create
-  - datart_schedule_execute
-  - datart_schedule_start
-  - datart_schedule_stop
-  - datart_dashboard_list
+  - dataeye_schedule_list
+  - dataeye_schedule_create
+  - dataeye_schedule_execute
+  - dataeye_schedule_execute
+  - dataeye_schedule_execute
+  - dataeye_dashboard_list
 ---
 
-# Datart 定时任务 Skill
+# DataEye 定时任务 Skill
 
-帮助用户查看、创建和管理 Datart 看板的定时推送任务。
+帮助用户查看、创建和管理 DataEye 数据看板的定时推送任务。
 
 ## Cron 表达式快速参考
 
@@ -42,7 +42,7 @@ requiredTools:
 ### 场景一：用户问"有哪些定时任务"
 
 ```
-步骤1: datart_schedule_list(orgId=<orgId>)
+步骤1: dataeye_schedule_list(orgId=<orgId>)
    → 获取任务列表
 
 步骤2: 整理展示
@@ -84,7 +84,7 @@ requiredTools:
    频率：每天 09:00（0 0 9 * * ?）
    推送方式：EMAIL → 张三 <zhangsan@company.com>
 
-步骤2: 用户确认 → datart_schedule_create(...)
+步骤2: 用户确认 → dataeye_schedule_create(...)
 
 步骤3: 返回创建结果 + 提示"是否立即测试执行一次？"
 ```
@@ -92,8 +92,8 @@ requiredTools:
 ### 场景三：用户说"立即触发一次任务"
 
 ```
-步骤1: datart_schedule_list() → 找到目标任务 ID（如需要）
-步骤2: datart_schedule_execute(scheduleId=<id>)
+步骤1: dataeye_schedule_list() → 找到目标任务 ID（如需要）
+步骤2: dataeye_schedule_execute(scheduleId=<id>)
    → 触发立即执行
 步骤3: "已触发执行，可查看任务日志确认结果"
 ```
@@ -101,8 +101,8 @@ requiredTools:
 ### 场景四：启动/停止任务
 
 ```
-启动: datart_schedule_start(scheduleId=<id>)
-停止: datart_schedule_stop(scheduleId=<id>)
+启动: dataeye_schedule_execute(scheduleId=<id>, action="start")
+停止: dataeye_schedule_execute(scheduleId=<id>, action="stop")
 ```
 
 ## config 字段说明
@@ -139,12 +139,12 @@ requiredTools:
 | 任务列表为空 | "当前没有定时任务，需要帮您创建吗？" |
 | Cron 表达式无效 | 重新解析用户描述的频率，给出正确 Cron |
 | 看板不存在 | "未找到该看板，请确认看板名称" |
-| 邮件配置未就绪 | "请先在 Datart 系统设置中配置邮件服务" |
+| 邮件配置未就绪 | "请先在系统设置中配置邮件服务" |
 | 触发执行失败 | 原文转述错误信息 |
 
 ## 注意事项
 
-- **Cron 格式**：Datart 使用 Quartz 格式（6位），如 `0 0 9 * * ?`，第一位是秒
+- **Cron 格式**：定时任务使用 Quartz 格式（6位），如 `0 0 9 * * ?`，第一位是秒
 - **创建前确认**：必须展示摘要让用户确认，不要静默创建
 - **时区**：默认使用服务器时区，如需指定传 `timezone` 字段（如 `Asia/Shanghai`）
 - 详细 API 参数见 [reference/api.md](reference/api.md)
