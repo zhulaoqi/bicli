@@ -4,6 +4,7 @@ import type { CustomModelConfig } from "@bicli/core";
 import type { Response } from "express";
 import type { SessionStore, ToolCallRecord } from "./session-store.js";
 import { extractFollowUps } from "./system-prompt.js";
+import { runRepairRound } from "./response-repair.js";
 
 export interface StreamToolSpec {
   name: string;
@@ -326,22 +327,59 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
       fullText = warning;
     }
 
-    // ── 幻觉列表探测 ─────────────────────────────────────────────────────────
-    // 当用户明确要求查询/执行/创建等实时操作时，如果本轮没有任何工具调用但输出大量列表项，
-    // 才判定为从历史记忆中复读数据。纯帮助中心知识问答允许出现步骤列表。
-    // 用 text_replace 事件完整替换前端已显示的内容，而不是追加警告——
-    // 这样用户看不到任何幻觉数据，体验更干净。
+    // ── 幻觉列表探测 + 自动纠偏 ─────────────────────────────────────────────
+    // 当本轮没有任何工具调用但输出大量列表项时，判定为从历史/记忆中复读数据。
+    // 先尝试自动纠偏（runRepairRound）：用 toolChoice:required 重跑一次，
+    // 若纠偏成功则展示真实结果；若失败则降级为原有警告提示。
+    // 用 text_replace 事件通知前端替换已显示内容，用户看不到幻觉数据。
     if (!skipNoToolListGuard && recordedCalls.length === 0 && !hasFakeToolCall) {
       const listItemCount = (fullText.match(/^\s*[-•*◆▸◇]\s+.+|^\s*\d+[.)、]\s+.+/gm) || []).length;
       if (listItemCount > 8) {
-        const replacement =
-          `⚠️ 检测到本次回复包含大量列表内容，但本轮并未执行任何工具调用。\n\n` +
-          `这意味着数据来自历史记录或模型推断，**不是真实查询结果**，已阻止显示以避免误导。\n\n` +
-          `请告诉我你想查什么，我会立即重新调用工具获取最新数据。`;
-        console.warn(`[stream] hallucination detected: ${listItemCount} list items with no tool calls — replacing content`);
-        // text_replace 通知前端丢弃已渲染的所有文本，显示替换内容
-        sseSend(res, "text_replace", { content: replacement });
-        fullText = replacement;
+        console.warn(`[stream] hallucination detected: ${listItemCount} list items, no tool calls — starting repair round`);
+
+        // 先告诉用户正在重新查询，清除前端幻觉内容
+        sseSend(res, "text_replace", { content: "⏳ 检测到回复疑似来自缓存数据，正在重新向系统查询，请稍候…" });
+
+        const repair = await runRepairRound({
+          llm,
+          systemPrompt,
+          messages,
+          aiTools,
+        });
+
+        if (repair && repair.toolCount > 0) {
+          // 纠偏成功：补发工具调用 SSE 事件（retroactive），然后展示真实结果
+          console.log(`[stream] repair succeeded: ${repair.toolCount} tool calls, textLen=${repair.text.length}`);
+          for (const step of repair.steps) {
+            for (const call of step.toolCalls) {
+              sseSend(res, "tool_start", {
+                id: call.toolCallId,
+                name: call.toolName,
+                args: call.input ?? {},
+              });
+            }
+            for (const tr of step.toolResults) {
+              sseSend(res, "tool_result", {
+                id: tr.toolCallId,
+                name: tr.toolName,
+                result: tr.output ?? "",
+                duration: 0,
+                status: "done",
+              });
+            }
+          }
+          sseSend(res, "text_replace", { content: repair.text });
+          fullText = repair.text;
+        } else {
+          // 纠偏失败：降级到原有警告提示
+          console.warn(`[stream] repair round failed or no tools called, showing fallback warning`);
+          const replacement =
+            `⚠️ 检测到本次回复包含大量列表内容，但本轮并未执行任何工具调用。\n\n` +
+            `这意味着数据来自历史记录或模型推断，**不是真实查询结果**，已阻止显示以避免误导。\n\n` +
+            `请告诉我你想查什么，我会立即重新调用工具获取最新数据。`;
+          sseSend(res, "text_replace", { content: replacement });
+          fullText = replacement;
+        }
       }
     }
     // ─────────────────────────────────────────────────────────────────────────

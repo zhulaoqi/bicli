@@ -9,12 +9,6 @@ let helpMatcher: SkillMatcher | null | undefined;
 
 const HELP_SKILL_PREFIX = "dataeye-help-";
 
-const HELP_INTENT_RE =
-  /(是什么|啥意思|什么意思|能干啥|做什么|怎么用|如何使用|在哪里|在哪|怎么配置|如何配置|说明|文档|FAQ|教程|口径|解释|含义|区别|支持吗|能不能)/i;
-
-const LIVE_DATA_INTENT_RE =
-  /(查一下|查询|列出|输出|有多少|多少个|多少条|执行|跑一下|结果|今天|昨天|近\d+|当前|最新|下载|创建|删除|修改|更新|分配)/i;
-
 function resolveSkillsDir(): string | null {
   const here = dirname(fileURLToPath(import.meta.url));
   const candidates = [
@@ -48,33 +42,23 @@ export function routeDataEyeHelpSkill<T extends ToolLike>(
   permissions: string[],
   tools: T[],
 ): { skill: Skill | null; tools: T[]; skillPrompt?: string } {
-  const hasHelpIntent = HELP_INTENT_RE.test(userInput);
-  const hasLiveDataIntent = LIVE_DATA_INTENT_RE.test(userInput);
-
-  if (hasLiveDataIntent && !hasHelpIntent) {
-    return { skill: null, tools };
-  }
-
   const matcher = getHelpMatcher();
   const skill = matcher?.match(userInput, permissions) ?? null;
   if (!skill) return { skill: null, tools };
 
-  const allowed = new Set(skill.requiredTools);
-  const isMixedIntent = hasHelpIntent && hasLiveDataIntent;
-  const routedTools = isMixedIntent
-    ? tools
-    : allowed.size > 0
-      ? tools.filter((t) => allowed.has(t.name))
-      : [];
+  // 不再基于关键词做“知识/实时”硬分流，避免口语表达导致误判。
+  // 命中帮助技能后仅注入知识上下文，工具集合保持完整，交由模型按需选择。
+  const preferredTools = (skill.requiredTools ?? []).filter(Boolean);
 
   return {
     skill,
-    tools: routedTools,
+    tools,
     skillPrompt: [
       "【当前请求命中 DataEye 帮助中心知识库】",
-      isMixedIntent
-        ? "本轮是混合意图：产品概念/用法基于以下知识库回答；用户数量、列表、创建/修改等实时或写操作必须调用工具，不能使用历史缓存或推断。"
-        : "本轮是纯产品知识咨询：基于以下知识库回答。除非该 skill 显式列出 requiredTools，否则不要调用任何工具，也不要编造实时数据。",
+      "请优先使用以下知识解释概念与操作路径；若用户要求实时数据/列表/执行结果，必须改为真实工具调用，不得复述历史或推断。",
+      preferredTools.length > 0
+        ? `优先候选工具：${preferredTools.join(", ")}`
+        : "该技能未指定候选工具，是否调用工具由当前任务决定。",
       "",
       skill.content,
     ].join("\n"),
