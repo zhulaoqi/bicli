@@ -18,6 +18,70 @@ const EXECUTE_ENDPOINT: Record<number, string> = {
   3: "/api/my-query-retention/report",
 };
 
+type SavedAnalysisDetail = {
+  id?: number;
+  name?: string;
+  type: number;
+  projectId?: number;
+  productId?: number;
+  productIds?: string | null;
+  timeCompareType?: number | null;
+  granularityType?: number | null;
+  timeSpan?: number | null;
+  timeSpanEnd?: number | null;
+  queryStartTime?: string | null;
+  queryEndTime?: string | null;
+  timeFilterType?: number | null;
+  timezone?: number | null;
+  isDefault?: number | null;
+  prp?: string | null;
+  eventAnalysisQuery?: Record<string, unknown> | null;
+  funnelAnalysisQueryParam?: Record<string, unknown> | null;
+  retentionAnalysisQuery?: Record<string, unknown> | null;
+};
+
+function assignIfPresent(target: Record<string, unknown>, key: string, value: unknown) {
+  if (value !== undefined && value !== null && value !== "") {
+    target[key] = value;
+  }
+}
+
+export function buildSavedAnalysisQueryParam(detail: SavedAnalysisDetail): Record<string, unknown> | null {
+  let queryParam: Record<string, unknown> | null = null;
+  if (detail.type === 1) queryParam = detail.eventAnalysisQuery ?? null;
+  else if (detail.type === 2) queryParam = detail.funnelAnalysisQueryParam ?? null;
+  else if (detail.type === 3) queryParam = detail.retentionAnalysisQuery ?? null;
+
+  if (!queryParam) {
+    try {
+      queryParam = detail.prp ? JSON.parse(detail.prp) : null;
+    } catch {
+      queryParam = null;
+    }
+  }
+
+  if (!queryParam) return null;
+
+  const tableFields: Record<string, unknown> = {};
+  assignIfPresent(tableFields, "projectId", detail.projectId);
+  assignIfPresent(tableFields, "productId", detail.productId);
+  assignIfPresent(tableFields, "productIds", detail.productIds);
+  assignIfPresent(tableFields, "timeCompareType", detail.timeCompareType);
+  assignIfPresent(tableFields, "granularityType", detail.granularityType);
+  assignIfPresent(tableFields, "timeSpan", detail.timeSpan);
+  assignIfPresent(tableFields, "timeSpanEnd", detail.timeSpanEnd);
+  assignIfPresent(tableFields, "queryStartTime", detail.queryStartTime);
+  assignIfPresent(tableFields, "queryEndTime", detail.queryEndTime);
+  assignIfPresent(tableFields, "timeFilterType", detail.timeFilterType);
+  assignIfPresent(tableFields, "timezone", detail.timezone);
+  assignIfPresent(tableFields, "isDefault", detail.isDefault);
+
+  return {
+    ...queryParam,
+    ...tableFields,
+  };
+}
+
 /**
  * 执行已保存的自助分析，返回结果摘要
  * 步骤：
@@ -32,19 +96,13 @@ export async function dateyeAnalysisExecute(db: Database, adapter: PermissionAda
     if (!analysisId) return formatError("INVALID_ARGS", "analysisId is required — 先调 dataeye_analysis_list 获取");
 
     // Step 1: 获取分析详情
-    const detail = await dateyeRequest<{
+    const detail = await dateyeRequest<SavedAnalysisDetail & {
       id: number;
       name: string;
-      type: number;
       status: number;
       projectId: number;
       productId: number;
       represent: string | null;
-      prp: string | null;
-      // 各类型解析后的字段
-      eventAnalysisQuery: Record<string, unknown> | null;
-      funnelAnalysisQueryParam: Record<string, unknown> | null;
-      retentionAnalysisQuery: Record<string, unknown> | null;
     }>(`/api/self-analysis-event/detail/${analysisId}`, context, { method: "GET" });
 
     if (!detail) {
@@ -62,20 +120,8 @@ export async function dateyeAnalysisExecute(db: Database, adapter: PermissionAda
       );
     }
 
-    // Step 2: 选择请求体
-    let queryParam: Record<string, unknown> | null = null;
-    if (detail.type === 1) queryParam = detail.eventAnalysisQuery;
-    else if (detail.type === 2) queryParam = detail.funnelAnalysisQueryParam;
-    else if (detail.type === 3) queryParam = detail.retentionAnalysisQuery;
-
-    if (!queryParam) {
-      // 兜底：直接解析 prp 字符串
-      try {
-        queryParam = detail.prp ? JSON.parse(detail.prp) : null;
-      } catch {
-        queryParam = null;
-      }
-    }
+    // Step 2: 选择请求体。prp 是类型配置，self_analysis_event 表字段是通用查询条件，执行时必须合并。
+    const queryParam = buildSavedAnalysisQueryParam(detail);
 
     if (!queryParam) {
       return formatError("INVALID_STATE", `分析「${detail.name}」的查询参数为空，可能尚未完成配置`);
