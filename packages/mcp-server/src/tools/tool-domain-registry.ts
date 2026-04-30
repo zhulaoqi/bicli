@@ -1,6 +1,7 @@
 import type { Database } from "../db/connection.js";
 import type { PermissionAdapter } from "../auth/adapter.js";
 import { zodToJsonSchema } from "zod-to-json-schema";
+import type { RouteName } from "../chat/agent/agent-state.js";
 import { userList, userListSchema } from "./user-list.js";
 import { userManage, userManageSchema } from "./user-manage.js";
 import { formCreate, formCreateSchema } from "./form-create.js";
@@ -92,6 +93,15 @@ export interface ToolDef {
   tier?: "business" | "atomic" | "internal";
   domain: string;
   handler: ToolHandler;
+  /**
+   * 适用的路由集合。Selector 会按 route 过滤工具。
+   * 缺省时按 `applyRouteHintDefaults` 规则补全：
+   *   - destructive 工具: ["write_action"]
+   *   - 其他: ["realtime_query", "diagnosis"]
+   */
+  routeHints?: RouteName[];
+  /** 仅在 knowledge / visual_explain 路由可见的纯知识工具 */
+  knowledgeOnly?: boolean;
 }
 
 export interface ToolDomain {
@@ -213,9 +223,69 @@ export function getEnabledTools(env: NodeJS.ProcessEnv = process.env): ToolDef[]
   const tools = getToolDomains()
     .filter((domain) => domain.enabled(env))
     .flatMap((domain) => domain.tools)
-    .filter((tool) => !tool.internal);
+    .filter((tool) => !tool.internal)
+    .map((tool) => applyRouteHintDefaults(tool));
   assertUniqueToolNames(tools);
   return tools;
+}
+
+const ROUTE_HINT_OVERRIDES: Record<string, RouteName[]> = {
+  // 业务级 manage / onboard / import：实时查 + 写动作
+  dataeye_schedule_manage: ["realtime_query", "write_action"],
+  dataeye_user_onboard: ["realtime_query", "write_action"],
+  dataeye_table_import_create: ["realtime_query", "write_action"],
+  dataeye_dashboard_execute: ["realtime_query", "diagnosis"],
+
+  // 纯诊断/审计
+  audit_query: ["diagnosis"],
+
+  // 通用底层查询：只用于实时查询，避免被 router 当作"诊断主线工具"
+  data_query: ["realtime_query"],
+  data_aggregate: ["realtime_query"],
+  config_get: ["realtime_query"],
+  self_permissions: ["realtime_query"],
+
+  // session 工具属于会话管理，路由层面不参与
+  session_save: ["realtime_query"],
+  session_load: ["realtime_query"],
+  session_list: ["realtime_query"],
+  session_delete: ["write_action"],
+};
+
+const HARD_WRITE_NAME_RE = /_(delete|archive|destroy|remove)$/i;
+const SOFT_WRITE_NAME_RE = /_(create|update|save|assign|set|copy|unarchive|onboard|import|status|manage)$/i;
+
+function applyRouteHintDefaults(tool: ToolDef): ToolDef {
+  if (tool.routeHints && tool.routeHints.length > 0) {
+    return tool;
+  }
+  const override = ROUTE_HINT_OVERRIDES[tool.name];
+  if (override) {
+    return { ...tool, routeHints: override };
+  }
+
+  // 1. 名字硬写 (_delete/_archive/_destroy/_remove) → 仅 write_action
+  if (HARD_WRITE_NAME_RE.test(tool.name)) {
+    return { ...tool, routeHints: ["write_action"] };
+  }
+
+  // 2. destructive boolean=true 视为强写
+  if (tool.destructive === true) {
+    return { ...tool, routeHints: ["write_action"] };
+  }
+
+  // 3. destructive 数组非空 → 实时 + 写
+  if (Array.isArray(tool.destructive) && tool.destructive.length > 0) {
+    return { ...tool, routeHints: ["realtime_query", "write_action"] };
+  }
+
+  // 4. 名字软写 (_create/_update/...) → 实时 + 写
+  if (SOFT_WRITE_NAME_RE.test(tool.name)) {
+    return { ...tool, routeHints: ["realtime_query", "write_action"] };
+  }
+
+  // 5. 默认：可用于实时查询和诊断（不在 knowledge / visual_explain / write_action 出现）
+  return { ...tool, routeHints: ["realtime_query", "diagnosis"] };
 }
 
 export async function loadChatToolRegistry(env: NodeJS.ProcessEnv = process.env): Promise<{

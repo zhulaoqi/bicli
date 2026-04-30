@@ -63,4 +63,69 @@ describe("tool domain registry", () => {
     expect(registry.definitions.some((definition) => definition.name === "dataeye_dashboard_execute")).toBe(true);
     expect(registry.definitions.some((definition) => definition.name === "audit_write")).toBe(false);
   });
+
+  describe("route hints", () => {
+    const env = {
+      PERMISSION_MODE: "dataeye",
+      DATART_API_URL: "https://visualization.example.test",
+    };
+
+    it("annotates dashboard_execute as realtime_query + diagnosis", () => {
+      const tools = getEnabledTools(env);
+      const dashboardExec = tools.find((t) => t.name === "dataeye_dashboard_execute");
+      expect(dashboardExec?.routeHints).toEqual(
+        expect.arrayContaining(["realtime_query", "diagnosis"]),
+      );
+      expect(dashboardExec?.routeHints).not.toContain("knowledge");
+    });
+
+    it("annotates schedule_manage as realtime_query + write_action", () => {
+      const tools = getEnabledTools(env);
+      const scheduleManage = tools.find((t) => t.name === "dataeye_schedule_manage");
+      expect(scheduleManage?.routeHints).toEqual(
+        expect.arrayContaining(["realtime_query", "write_action"]),
+      );
+      expect(scheduleManage?.routeHints).not.toContain("knowledge");
+    });
+
+    it("annotates schedule_logs as diagnosis-friendly", () => {
+      const tools = getEnabledTools(env);
+      const logs = tools.find((t) => t.name === "dataeye_schedule_logs");
+      expect(logs?.routeHints).toEqual(
+        expect.arrayContaining(["realtime_query", "diagnosis"]),
+      );
+    });
+
+    it("annotates data_query / config_get as realtime_query and not knowledge", () => {
+      const tools = getEnabledTools(env);
+      const dataQuery = tools.find((t) => t.name === "data_query");
+      const configGet = tools.find((t) => t.name === "config_get");
+      expect(dataQuery?.routeHints).toEqual(
+        expect.arrayContaining(["realtime_query"]),
+      );
+      expect(dataQuery?.routeHints).not.toContain("knowledge");
+      expect(configGet?.routeHints).toEqual(
+        expect.arrayContaining(["realtime_query"]),
+      );
+      expect(configGet?.routeHints).not.toContain("knowledge");
+    });
+
+    it("annotates audit_query as diagnosis", () => {
+      const tools = getEnabledTools(env);
+      const audit = tools.find((t) => t.name === "audit_query");
+      expect(audit?.routeHints).toEqual(expect.arrayContaining(["diagnosis"]));
+    });
+
+    it("destructive write tools (delete/archive) are restricted to write_action route", () => {
+      const tools = getEnabledTools(env);
+      const scheduleDelete = tools.find((t) => t.name === "dataeye_schedule_delete");
+      expect(scheduleDelete?.routeHints).toEqual(["write_action"]);
+    });
+
+    it("does not declare any knowledgeOnly tool yet (knowledge tools are added in P1)", () => {
+      const tools = getEnabledTools(env);
+      const knowledgeTools = tools.filter((t) => t.knowledgeOnly === true);
+      expect(knowledgeTools).toEqual([]);
+    });
+  });
 });
