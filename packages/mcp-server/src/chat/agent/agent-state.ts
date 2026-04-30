@@ -61,17 +61,8 @@ export interface AgentTelemetry {
   finalizeRan: boolean;
 }
 
-/**
- * 引用结构性产物的轻量记录（不存原始数据，只存 SSE 已发送过的元信息）。
- * 真正的 MessageBlock / chart payload 仍由现有 `message-blocks.ts` / `result-block-factory.ts` 管理。
- */
-export interface CollectedArtifact {
-  type: "block" | "chart";
-  /** 来源工具名 */
-  sourceTool: string;
-}
-
 import type { ToolCallRecord } from "../session-store.js";
+import type { MessageBlock } from "../message-blocks.js";
 
 export interface AgentRunState {
   sessionId: number;
@@ -90,8 +81,10 @@ export interface AgentRunState {
   messages: Array<{ role: string; content: any }>;
   /** Act 阶段记录的工具调用 */
   toolCalls: ToolCallRecord[];
-  /** Act 阶段产生的 message_block / chart 引用 */
-  collectedArtifacts: CollectedArtifact[];
+  /** Act 阶段产生的 message_block 完整数据（用于持久化历史消息） */
+  collectedBlocks: MessageBlock[];
+  /** Act 阶段产生的 chart 数据（用于持久化历史消息） */
+  collectedCharts: unknown[];
   /** Act 阶段模型同时输出的零散文字（一般为空，finalize 才负责生成最终回复） */
   actText: string;
   /** Finalize 阶段的最终自然语言回复 */
@@ -148,7 +141,8 @@ export function createInitialAgentRunState(input: CreateAgentRunStateInput): Age
     forbiddenToolNames: [],
     messages: [],
     toolCalls: [],
-    collectedArtifacts: [],
+    collectedBlocks: [],
+    collectedCharts: [],
     actText: "",
     finalText: "",
     reflectVerdict: { ...defaultVerdict },

@@ -145,7 +145,7 @@ async function executeToolSpec(
             ...block,
             sourceTool: block.sourceTool ?? spec.name,
           };
-          state.collectedArtifacts.push({ type: "block", sourceTool: spec.name });
+          state.collectedBlocks.push(normalizedBlock);
           emitSse(deps.res, "message_block", normalizedBlock);
         }
       }
@@ -155,7 +155,7 @@ async function executeToolSpec(
           toolName: spec.name,
           ...(chart as Record<string, unknown>),
         };
-        state.collectedArtifacts.push({ type: "chart", sourceTool: spec.name });
+        state.collectedCharts.push(chartPayload);
         emitSse(deps.res, "chart_data", chartPayload);
       }
       resultForLLM = String(withoutArtifacts);

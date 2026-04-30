@@ -82,7 +82,7 @@ describe("runAct", () => {
     await runAct(state, deps);
 
     expect(streamTextMock).toHaveBeenCalledTimes(1);
-    const passedTools = streamTextMock.mock.calls[0][0].tools;
+    const passedTools = (streamTextMock.mock.calls[0] as any[])[0].tools;
     expect(Object.keys(passedTools)).toEqual(["dataeye_schedule_list"]);
     expect(state.telemetry.actMs).toBeGreaterThanOrEqual(0);
   });
@@ -204,7 +204,7 @@ describe("runFinalize", () => {
 
     await runFinalize(state, deps);
 
-    const call = streamTextMock.mock.calls[0][0];
+    const call = (streamTextMock.mock.calls[0] as any[])[0];
     expect(call.tools).toBeUndefined();
     // 工具结果摘要必须出现在 messages 里
     const lastMessage = call.messages[call.messages.length - 1];
@@ -287,7 +287,7 @@ describe("runFinalize", () => {
     };
 
     await runFinalize(state, deps);
-    const call = streamTextMock.mock.calls[0][0];
+    const call = (streamTextMock.mock.calls[0] as any[])[0];
     expect(call.system).toContain("Mermaid");
   });
 });
@@ -325,7 +325,7 @@ describe("runActRepair", () => {
     const outcome = await runActRepair(state, deps);
     expect(outcome).not.toBeNull();
     expect(outcome!.toolCount).toBe(1);
-    expect(generateTextMock.mock.calls[0][0].toolChoice).toBe("required");
+    expect((generateTextMock.mock.calls[0] as any[])[0].toolChoice).toBe("required");
     expect(state.toolCalls.find((c) => c.id === "r1")?.status).toBe("done");
     expect(state.telemetry.repairCount).toBe(1);
     expect(events.map((e) => e.event)).toEqual(expect.arrayContaining(["tool_start", "tool_result"]));

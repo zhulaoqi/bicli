@@ -1,9 +1,18 @@
 import type { RouteDecision, RouteName } from "./agent-state.js";
-import type { ToolDef } from "../../tools/tool-domain-registry.js";
 
-export interface ToolSelection {
+/** Selector 只关心这几个字段，不强依赖 ToolDef，便于在 stream.ts 直接用 StreamToolSpec。 */
+export interface ToolRouteFacet {
+  name: string;
+  domain?: string;
+  routeHints?: RouteName[];
+  knowledgeOnly?: boolean;
+  destructive?: boolean | string[];
+  tier?: "business" | "atomic" | "internal";
+}
+
+export interface ToolSelection<T extends ToolRouteFacet = ToolRouteFacet> {
   /** 模型本轮可见的工具集合 */
-  allowed: ToolDef[];
+  allowed: T[];
   /** 被显式屏蔽的工具名（仅做 trace） */
   forbidden: string[];
   /** 选择过程的简短说明（trace 与调试） */
@@ -46,31 +55,34 @@ const BUSINESS_OVERRIDES: Array<{
   },
 ];
 
-function getHints(tool: ToolDef): RouteName[] {
+function getHints(tool: ToolRouteFacet): RouteName[] {
   return tool.routeHints && tool.routeHints.length > 0 ? tool.routeHints : DEFAULT_HINTS;
 }
 
-function isToolDestructive(tool: ToolDef): boolean {
+function isToolDestructive(tool: ToolRouteFacet): boolean {
   if (tool.destructive === true) return true;
   if (Array.isArray(tool.destructive) && tool.destructive.length > 0) return true;
   return false;
 }
 
-function isPureKnowledgeTool(tool: ToolDef): boolean {
+function isPureKnowledgeTool(tool: ToolRouteFacet): boolean {
   return tool.knowledgeOnly === true;
 }
 
-function matchesAnyDomain(tool: ToolDef, domains: string[]): boolean {
+function matchesAnyDomain(tool: ToolRouteFacet, domains: string[]): boolean {
   if (domains.length === 0) return true;
   for (const d of domains) {
     if (tool.name.toLowerCase().includes(d.toLowerCase())) return true;
-    if (tool.domain.toLowerCase() === d.toLowerCase()) return true;
+    if (tool.domain && tool.domain.toLowerCase() === d.toLowerCase()) return true;
   }
   return false;
 }
 
-export function selectToolsForRoute(registry: ToolDef[], decision: RouteDecision): ToolSelection {
-  const allowed: ToolDef[] = [];
+export function selectToolsForRoute<T extends ToolRouteFacet>(
+  registry: T[],
+  decision: RouteDecision,
+): ToolSelection<T> {
+  const allowed: T[] = [];
   const forbidden: string[] = [];
   const route = decision.route;
 
@@ -135,7 +147,7 @@ export function selectToolsForRoute(registry: ToolDef[], decision: RouteDecision
   };
 }
 
-function isShadowedAtomicForBusiness(tool: ToolDef, registry: ToolDef[]): boolean {
+function isShadowedAtomicForBusiness(tool: ToolRouteFacet, registry: ToolRouteFacet[]): boolean {
   for (const rule of BUSINESS_OVERRIDES) {
     if (!rule.shadowedAtomic.includes(tool.name)) continue;
     const businessExists = registry.some((t) => t.name === rule.business);
