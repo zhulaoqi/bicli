@@ -8,6 +8,7 @@ import { extractStructuredToolArtifacts } from "../message-blocks.js";
 import { runFinalize } from "./finalizer.js";
 import { runReflect } from "./reflector.js";
 import { computeRenderHints } from "./render-hints.js";
+import { runCritique, shouldRunCritique } from "./critique.js";
 
 const ACT_PROMPT_SUFFIX = `
 
@@ -329,6 +330,22 @@ export async function runAgentLoop(state: AgentRunState, deps: AgentDeps): Promi
     state.finalText = verdict.text;
   }
   state.reflectVerdict = verdict;
+
+  // 模型 critique 仅在指定 route 触发，且 reflect 已 ok 时（避免把 fallback 文本送给 critique）
+  if (verdict.verdict === "ok" && shouldRunCritique(state)) {
+    try {
+      const critique = await runCritique(state, deps);
+      if (critique && !critique.passed) {
+        const issuesText = critique.issues.length > 0 ? `\n\n[critique 标记]: ${critique.issues.join("; ")}` : "";
+        if (critique.suggestion && critique.suggestion.length > 0) {
+          state.finalText = critique.suggestion + issuesText;
+          emitSse(deps.res, "text_replace", { content: state.finalText });
+        }
+      }
+    } catch (err) {
+      console.warn("[agent.loop] critique threw:", err instanceof Error ? err.message : String(err));
+    }
+  }
 
   // Render hints：finalize 完成后再算（这样能感知 finalText 中的 mermaid 等内容）
   state.renderHints = computeRenderHints(state);
