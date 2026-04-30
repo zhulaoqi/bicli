@@ -97,6 +97,20 @@ describe("runReflect", () => {
     expect(verdict.text).toContain("好的，查询完成");
   });
 
+  it("returns fallback with cleaned text when tool_history marker is dangling/unclosed", () => {
+    const state = makeState({
+      finalText:
+        "查询完成。\n\n<!--\ntool_history:dataeye_knowledge_search:ok|dataeye_concept_explain:ok|",
+      toolCalls: [
+        { id: "1", name: "dataeye_knowledge_search", args: {}, status: "done", result: "{}" },
+      ],
+    });
+    const verdict = runReflect(state);
+    expect(verdict.verdict).toBe("fallback");
+    expect(verdict.reasons).toContain("leaked_tool_history_comment");
+    expect(verdict.text).toBe("查询完成。");
+  });
+
   it("returns fallback with grounded text on empty analysis + speculative root cause", () => {
     const state = makeState({
       finalText: "初步诊断：该事件 SDK 未注册，可能没有上报。",

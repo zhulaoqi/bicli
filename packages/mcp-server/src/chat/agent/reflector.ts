@@ -20,6 +20,8 @@ const FAKE_TOOL_CALL_PATTERNS = [
 ];
 
 const TOOL_HISTORY_COMMENT_PATTERN = /<!--[\s\S]*?tool_(history|call|result):[\s\S]*?-->/gi;
+const DANGLING_TOOL_HISTORY_PATTERN = /<!--[\s\S]*?tool_(history|call|result):[\s\S]*$/gi;
+const RAW_TOOL_HISTORY_LINE_PATTERN = /(^|\n)\s*tool_(history|call|result):[\s\S]*$/gi;
 
 export function runReflect(state: AgentRunState): ReflectVerdict {
   const reasons: string[] = [];
@@ -39,6 +41,16 @@ export function runReflect(state: AgentRunState): ReflectVerdict {
 
   // 2. tool history comment 残留：清洗后 ok
   if (TOOL_HISTORY_COMMENT_PATTERN.test(text)) {
+    const cleaned = stripToolHistoryComments(text);
+    if (cleaned !== text) {
+      return {
+        verdict: "fallback",
+        reasons: ["leaked_tool_history_comment"],
+        text: cleaned,
+      };
+    }
+  }
+  if (DANGLING_TOOL_HISTORY_PATTERN.test(text) || RAW_TOOL_HISTORY_LINE_PATTERN.test(text)) {
     const cleaned = stripToolHistoryComments(text);
     if (cleaned !== text) {
       return {
@@ -172,7 +184,12 @@ function replaceEmptyAnalysisSpeculation(): string {
 }
 
 function stripToolHistoryComments(text: string): string {
-  return text.replace(TOOL_HISTORY_COMMENT_PATTERN, "").replace(/\n{3,}/g, "\n\n").trim();
+  return text
+    .replace(TOOL_HISTORY_COMMENT_PATTERN, "")
+    .replace(DANGLING_TOOL_HISTORY_PATTERN, "")
+    .replace(RAW_TOOL_HISTORY_LINE_PATTERN, "$1")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function parseToolResult(result: unknown): any | null {
