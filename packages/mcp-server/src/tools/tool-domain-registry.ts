@@ -62,6 +62,9 @@ import { datartScheduleList, datartScheduleListDef } from "./datart-schedule-lis
 import { datartScheduleCreate, datartScheduleCreateDef } from "./datart-schedule-create.js";
 import { datartScheduleExecute, datartScheduleExecuteDef } from "./datart-schedule-execute.js";
 import { datartShareCreate, datartShareCreateDef } from "./datart-share-create.js";
+import { datartShareList, datartShareListDef } from "./datart-share-list.js";
+import { datartDownloadSubmit, datartDownloadSubmitDef } from "./datart-download-submit.js";
+import { datartDownloadTaskList, datartDownloadTaskListDef } from "./datart-download-task-list.js";
 import { datartOrgList, datartOrgListDef } from "./datart-org-list.js";
 
 export type ToolHandler = (
@@ -178,6 +181,9 @@ export const visualizationDomain: ToolDomain = {
     { domain: "visualization", tier: "atomic", name: datartScheduleCreateDef.name, description: datartScheduleCreateDef.description, inputSchema: datartScheduleCreateDef.inputSchema, requiredPermissions: [], handler: datartScheduleCreate },
     { domain: "visualization", tier: "atomic", name: datartScheduleExecuteDef.name, description: datartScheduleExecuteDef.description, inputSchema: datartScheduleExecuteDef.inputSchema, requiredPermissions: [], handler: datartScheduleExecute },
     { domain: "visualization", tier: "atomic", name: datartShareCreateDef.name, description: datartShareCreateDef.description, inputSchema: datartShareCreateDef.inputSchema, requiredPermissions: [], handler: datartShareCreate },
+    { domain: "visualization", tier: "atomic", name: datartShareListDef.name, description: datartShareListDef.description, inputSchema: datartShareListDef.inputSchema, requiredPermissions: [], handler: datartShareList },
+    { domain: "visualization", tier: "atomic", name: datartDownloadSubmitDef.name, description: datartDownloadSubmitDef.description, inputSchema: datartDownloadSubmitDef.inputSchema, requiredPermissions: [], handler: datartDownloadSubmit },
+    { domain: "visualization", tier: "atomic", name: datartDownloadTaskListDef.name, description: datartDownloadTaskListDef.description, inputSchema: datartDownloadTaskListDef.inputSchema, requiredPermissions: [], handler: datartDownloadTaskList },
     { domain: "visualization", tier: "atomic", name: datartOrgListDef.name, description: datartOrgListDef.description, inputSchema: datartOrgListDef.inputSchema, requiredPermissions: [], handler: datartOrgList },
   ],
 };
