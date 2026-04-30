@@ -7,6 +7,7 @@ import type { ToolCallRecord } from "../session-store.js";
 import { extractStructuredToolArtifacts } from "../message-blocks.js";
 import { runFinalize } from "./finalizer.js";
 import { runReflect } from "./reflector.js";
+import { computeRenderHints } from "./render-hints.js";
 
 const ACT_PROMPT_SUFFIX = `
 
@@ -328,6 +329,13 @@ export async function runAgentLoop(state: AgentRunState, deps: AgentDeps): Promi
     state.finalText = verdict.text;
   }
   state.reflectVerdict = verdict;
+
+  // Render hints：finalize 完成后再算（这样能感知 finalText 中的 mermaid 等内容）
+  state.renderHints = computeRenderHints(state);
+  if (Object.keys(state.renderHints).length > 0) {
+    emitSse(deps.res, "agent_render_hint", state.renderHints);
+  }
+
   return verdict;
 }
 
