@@ -49,6 +49,18 @@ export function runReflect(state: AgentRunState): ReflectVerdict {
     }
   }
 
+  // 2.5 模型陷入重复刷屏（常见于“我将并行调用...”循环）：
+  // 直接 fallback，避免把噪声文本继续透传给用户。
+  if (hasRepetitiveStalledText(text)) {
+    return {
+      verdict: "fallback",
+      reasons: ["repetitive_stalled_text"],
+      text:
+        "⚠️ 检测到模型输出重复，已中止本轮文本生成。\n\n" +
+        "请重试该请求；若仍复现，可切换模型或把问题拆成两条更短指令。",
+    };
+  }
+
   // 3. 历史截断标记残留
   const withoutHistoryArtifacts = sanitizeVisibleHistoryArtifacts(text);
   if (withoutHistoryArtifacts !== text) {
@@ -234,4 +246,25 @@ function hasFailedToolButFinalizeIgnoresIt(toolCalls: ToolCallRecord[], text: st
   if (!failed) return false;
   if (text.includes("失败") || text.includes("错误") || text.includes("无法") || text.includes("权限")) return false;
   return true;
+}
+
+function hasRepetitiveStalledText(text: string): boolean {
+  const normalized = text
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (normalized.length < 8) return false;
+
+  const counter = new Map<string, number>();
+  for (const line of normalized) {
+    // 过短片段容易误判，不参与重复检测
+    if (line.length < 12) continue;
+    counter.set(line, (counter.get(line) ?? 0) + 1);
+  }
+  if (counter.size === 0) return false;
+  const maxRepeat = Math.max(...counter.values());
+  if (maxRepeat < 6) return false;
+
+  // 覆盖度阈值：同一句占比 >= 45% 才视为卡死刷屏
+  return maxRepeat / normalized.length >= 0.45;
 }

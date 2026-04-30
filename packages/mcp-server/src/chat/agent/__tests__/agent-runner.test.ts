@@ -537,7 +537,7 @@ describe("runAgentLoop", () => {
     }
   });
 
-  it("repair fails (no tools called) => verdict=fallback, finalText preserved", async () => {
+  it("repair fails (no tools called) => verdict=fallback, sends text_replace with deterministic message", async () => {
     const state = makeState();
     state.allowedToolNames = ["dataeye_schedule_list"];
 
@@ -555,7 +555,7 @@ describe("runAgentLoop", () => {
 
     const generateTextMock = vi.fn().mockResolvedValue({ text: "", toolCalls: [], steps: [] });
 
-    const { res } = fakeRes();
+    const { res, events } = fakeRes();
     const deps: AgentDeps = {
       llm: {} as any,
       systemPrompt: "sys",
@@ -570,5 +570,9 @@ describe("runAgentLoop", () => {
     expect(verdict.verdict).toBe("fallback");
     expect(verdict.reasons).toContain("repair_failed");
     expect(state.telemetry.repairCount).toBe(1);
+    expect(state.finalText).toContain("工具未能完成此次请求");
+    const replace = events.find((e) => e.event === "text_replace");
+    expect(replace).toBeDefined();
+    expect(String(replace?.data?.content ?? "")).toContain("工具未能完成此次请求");
   });
 });

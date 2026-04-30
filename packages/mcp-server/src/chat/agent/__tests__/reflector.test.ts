@@ -70,6 +70,20 @@ describe("runReflect", () => {
     expect(verdict.text).toContain("function calling");
   });
 
+  it("returns fallback when final text is repetitive stalled sentence", () => {
+    const repeated = Array.from({ length: 14 })
+      .map(() => "我将并行调用多个工具来获取您的分析列表。")
+      .join("\n\n");
+    const state = makeState({
+      finalText: repeated,
+      toolCalls: [],
+    });
+    const verdict = runReflect(state);
+    expect(verdict.verdict).toBe("fallback");
+    expect(verdict.reasons).toContain("repetitive_stalled_text");
+    expect(verdict.text).toContain("检测到模型输出重复");
+  });
+
   it("returns fallback with cleaned text when finalize leaks tool_history comment", () => {
     const state = makeState({
       finalText: "好的，查询完成。\n\n<!-- tool_history: prev=foo -->\n更多详情请询问。",

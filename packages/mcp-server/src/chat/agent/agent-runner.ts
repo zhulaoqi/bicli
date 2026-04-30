@@ -327,7 +327,7 @@ export async function runAgentLoop(state: AgentRunState, deps: AgentDeps): Promi
       verdict = {
         verdict: "fallback",
         reasons: [...verdict.reasons, "repair_failed"],
-        text: state.finalText || "⚠️ 工具未能完成此次请求，请稍后重试或换用其他模型。",
+        text: "⚠️ 工具未能完成此次请求，请稍后重试或换用其他模型。",
       };
       break;
     }
@@ -338,6 +338,8 @@ export async function runAgentLoop(state: AgentRunState, deps: AgentDeps): Promi
 
   if (verdict.verdict === "fallback" && verdict.text) {
     state.finalText = verdict.text;
+    // finalize 阶段可能已经输出了有问题文本，fallback 必须显式覆盖前端已渲染内容。
+    emitSse(deps.res, "text_replace", { content: state.finalText });
   }
   state.reflectVerdict = verdict;
 
