@@ -45,6 +45,12 @@ describe("datartDataExecute", () => {
 
     const parsed = parseToolResponse(response);
     expect(parsed.success).toBe(true);
+    expect(parsed.data.__blocks__).toEqual([
+      expect.objectContaining({
+        type: "metric_cards",
+        title: "订单明细",
+      }),
+    ]);
     expect(calls[0].body).toMatchObject({
       viewId: "view_1",
       vizType: "VIEW",

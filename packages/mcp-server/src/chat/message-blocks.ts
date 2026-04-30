@@ -62,10 +62,59 @@ export interface StepsBlockPayload {
   orientation?: "vertical" | "horizontal";
 }
 
+export interface MetricCardsBlockPayload {
+  cards: Array<{
+    key: string;
+    label: string;
+    value: string | number;
+    unit?: string;
+    trend?: {
+      direction: "up" | "down" | "flat";
+      value?: string | number;
+      label?: string;
+    };
+  }>;
+}
+
+export interface ChartBlockPayload {
+  chartType: "line" | "bar";
+  xField: string;
+  yFields: string[];
+  categories: Array<string | number>;
+  series: Array<{
+    name: string;
+    data: Array<string | number | null>;
+  }>;
+}
+
+export interface SummaryBlockPayload {
+  items: Array<{
+    label: string;
+    value: string | number;
+    tone?: "default" | "success" | "warning" | "danger";
+  }>;
+}
+
+export interface WarningBlockPayload {
+  severity: "info" | "warning" | "error";
+  message: string;
+  details?: string[];
+}
+
 export type TableMessageBlock = MessageBlockBase<TableBlockPayload> & { type: "table" };
-export type ChartMessageBlock = MessageBlockBase & { type: "chart" };
+export type ChartMessageBlock = MessageBlockBase<ChartBlockPayload> & { type: "chart" };
+export type MetricCardsMessageBlock = MessageBlockBase<MetricCardsBlockPayload> & { type: "metric_cards" };
+export type SummaryMessageBlock = MessageBlockBase<SummaryBlockPayload> & { type: "summary" };
+export type WarningMessageBlock = MessageBlockBase<WarningBlockPayload> & { type: "warning" };
 export type StepsMessageBlock = MessageBlockBase<StepsBlockPayload> & { type: "steps" };
-export type MessageBlock = TableMessageBlock | ChartMessageBlock | StepsMessageBlock | MessageBlockBase;
+export type MessageBlock =
+  | TableMessageBlock
+  | ChartMessageBlock
+  | MetricCardsMessageBlock
+  | SummaryMessageBlock
+  | WarningMessageBlock
+  | StepsMessageBlock
+  | MessageBlockBase;
 
 export function createBlockId(prefix = "block"): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -105,20 +154,37 @@ export function extractMessageBlocksFromToolResult(raw: string): {
   blocks: MessageBlock[];
   resultForLLM: string;
 } {
+  const extracted = extractStructuredToolArtifacts(raw);
+  return { blocks: extracted.blocks, resultForLLM: String(extracted.resultForLLM) };
+}
+
+export function extractStructuredToolArtifacts(raw: unknown): {
+  blocks: MessageBlock[];
+  chart?: unknown;
+  resultForLLM: unknown;
+} {
+  if (typeof raw !== "string") {
+    return { blocks: [], resultForLLM: raw };
+  }
+
   try {
     const parsed = JSON.parse(raw);
     const blocks = Array.isArray(parsed?.data?.__blocks__)
       ? parsed.data.__blocks__.filter(isMessageBlock)
       : [];
+    const chart = parsed?.data?.__chart__;
 
-    if (blocks.length === 0) {
-      return { blocks: [], resultForLLM: raw };
+    if (parsed?.data && "__blocks__" in parsed.data) {
+      delete parsed.data.__blocks__;
+    }
+    if (parsed?.data && "__chart__" in parsed.data) {
+      delete parsed.data.__chart__;
     }
 
-    delete parsed.data.__blocks__;
     return {
       blocks,
-      resultForLLM: JSON.stringify(parsed),
+      ...(chart ? { chart } : {}),
+      resultForLLM: blocks.length || chart ? JSON.stringify(parsed) : raw,
     };
   } catch {
     return { blocks: [], resultForLLM: raw };

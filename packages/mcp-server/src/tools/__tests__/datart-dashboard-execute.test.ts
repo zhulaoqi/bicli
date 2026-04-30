@@ -176,6 +176,23 @@ describe("dashboard chart execution helpers", () => {
       vizId: "chart_1",
       pageInfo: { pageNo: 1, pageSize: 20 },
     });
+    expect(parsed.data.__blocks__).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "summary",
+          title: "看板执行摘要",
+          payload: expect.objectContaining({
+            items: expect.arrayContaining([
+              expect.objectContaining({ label: "成功组件", value: 1 }),
+            ]),
+          }),
+        }),
+        expect.objectContaining({
+          type: "metric_cards",
+          title: "趋势图",
+        }),
+      ]),
+    );
   });
 
   it("returns candidates without executing when dashboard ref is ambiguous", async () => {

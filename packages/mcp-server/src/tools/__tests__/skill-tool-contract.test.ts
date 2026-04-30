@@ -26,10 +26,11 @@ describe("Skill and MCP tool contracts", () => {
 
   it("keeps write-oriented business actions explicit about dryRun confirmation", () => {
     const writeBusinessTools = enabledTools.filter((tool) =>
-      ["dataeye_user_onboard", "dataeye_table_import_create"].includes(tool.name),
+      ["dataeye_user_onboard", "dataeye_table_import_create", "dataeye_schedule_manage"].includes(tool.name),
     );
 
     expect(writeBusinessTools.map((tool) => tool.name).sort()).toEqual([
+      "dataeye_schedule_manage",
       "dataeye_table_import_create",
       "dataeye_user_onboard",
     ]);

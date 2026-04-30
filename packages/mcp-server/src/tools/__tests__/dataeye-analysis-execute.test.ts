@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractChartData, extractSummary } from "../dataeye-analysis-execute.js";
+import { createAnalysisBlocks, extractChartData, extractSummary } from "../dataeye-analysis-execute.js";
 import { buildSavedAnalysisQuery } from "../saved-analysis-query-builder.js";
 
 describe("buildSavedAnalysisQuery compatibility coverage", () => {
@@ -170,6 +170,17 @@ describe("saved analysis execution result extraction", () => {
         },
       ],
     });
+    expect(createAnalysisBlocks(1, report, "总计没有显示")).toEqual([
+      expect.objectContaining({
+        type: "chart",
+        title: "总计没有显示",
+        payload: expect.objectContaining({
+          chartType: "line",
+          xField: "date",
+          yFields: ["total_times / 总计"],
+        }),
+      }),
+    ]);
   });
 
   it("marks empty event analysis results as inconclusive without inventing root causes", () => {
@@ -185,5 +196,15 @@ describe("saved analysis execution result extraction", () => {
       },
     });
     expect(JSON.stringify(summary)).not.toMatch(/SDK|未注册|未上报|命名|埋点/);
+    expect(createAnalysisBlocks(1, { chart: { x: [], y: {} }, rows: [], total: {} }, "总计没有显示")).toEqual([
+      expect.objectContaining({
+        type: "warning",
+        title: "总计没有显示",
+        payload: expect.objectContaining({
+          severity: "info",
+          message: "结果提示",
+        }),
+      }),
+    ]);
   });
 });

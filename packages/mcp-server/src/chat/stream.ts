@@ -5,7 +5,7 @@ import type { Response } from "express";
 import type { SessionStore, ToolCallRecord } from "./session-store.js";
 import { extractFollowUps } from "./system-prompt.js";
 import { runRepairRound } from "./response-repair.js";
-import { extractMessageBlocksFromToolResult } from "./message-blocks.js";
+import { extractStructuredToolArtifacts, type MessageBlock } from "./message-blocks.js";
 
 export interface StreamToolSpec {
   name: string;
@@ -159,6 +159,8 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
 
   const toolStartTimes: Record<string, number> = {};
   const recordedCalls: ToolCallRecord[] = [];
+  const collectedBlocks: MessageBlock[] = [];
+  const collectedCharts: unknown[] = [];
 
   const aiTools: Record<string, Tool<any, any>> = {};
   for (const t of tools) {
@@ -169,32 +171,33 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
         try {
           const raw = await t.execute(args ?? {});
 
-          // 拦截 __chart__ 字段：通过单独的 chart_data SSE 发给前端，不进入 LLM 上下文
+          // 拦截结构化展示字段：通过 SSE 发给前端，不进入 LLM 上下文
           let resultForLLM = raw;
           if (typeof raw === "string") {
-            const { blocks, resultForLLM: withoutBlocks } = extractMessageBlocksFromToolResult(raw);
+            const { blocks, chart, resultForLLM: withoutArtifacts } = extractStructuredToolArtifacts(raw);
             if (blocks.length > 0) {
               for (const block of blocks) {
-                safeSseSend(res, "message_block", {
+                const normalizedBlock = {
                   ...block,
                   sourceTool: block.sourceTool ?? t.name,
+                };
+                collectedBlocks.push(normalizedBlock);
+                safeSseSend(res, "message_block", {
+                  ...normalizedBlock,
                 });
               }
-              resultForLLM = withoutBlocks;
+            }
+            if (chart && typeof chart === "object") {
+              const chartPayload = {
+                toolCallId: t.name + "_" + Date.now(),
+                toolName: t.name,
+                ...(chart as Record<string, unknown>),
+              };
+              collectedCharts.push(chartPayload);
+              safeSseSend(res, "chart_data", chartPayload);
             }
 
-            try {
-              const parsed = JSON.parse(resultForLLM);
-              if (parsed?.data?.__chart__) {
-                safeSseSend(res, "chart_data", {
-                  toolCallId: t.name + "_" + Date.now(),
-                  toolName: t.name,
-                  ...parsed.data.__chart__,
-                });
-                delete parsed.data.__chart__;
-                resultForLLM = JSON.stringify(parsed);
-              }
-            } catch { /* JSON 解析失败则原样传给 LLM */ }
+            resultForLLM = String(withoutArtifacts);
           }
 
           // 全局工具结果大小保护：超过 6000 字符截断，防止单个工具结果撑爆 LLM 上下文
@@ -582,6 +585,8 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
       role: "assistant",
       content: contentForHistory,
       toolCalls: recordedCalls.length > 0 ? recordedCalls : null,
+      blocks: collectedBlocks.length > 0 ? collectedBlocks : null,
+      charts: collectedCharts.length > 0 ? collectedCharts : null,
     });
   }
 

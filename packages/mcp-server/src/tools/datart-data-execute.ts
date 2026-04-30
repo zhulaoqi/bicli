@@ -1,5 +1,7 @@
 import { formatSuccess, formatError, withAuth } from "./base.js";
 import { datartRequest } from "./datart-proxy.js";
+import { createBlocksFromProfile } from "../chat/result-block-factory.js";
+import { profileDataframe } from "../chat/result-profile.js";
 import {
   buildChartDataRequestBody as buildSharedChartDataRequestBody,
   buildChartExecuteRequest,
@@ -91,9 +93,23 @@ export async function datartDataExecute(db: Database, adapter: PermissionAdapter
 
     if (!df) return formatError("EMPTY", "图表数据为空");
 
-    const summary = summarizeDataframe(df, String(cleanArgs.chartName || vizId || "图表数据"));
-    return formatSuccess(summary);
+    const title = String(cleanArgs.chartName || cleanArgs.viewName || viewNameFromInput(cleanArgs.view) || vizId || "图表数据");
+    const summary = summarizeDataframe(df, title);
+    return formatSuccess({
+      ...summary,
+      __blocks__: createBlocksFromProfile(profileDataframe(df), {
+        title,
+        sourceTool: "dataeye_data_execute",
+        maxRows: 20,
+      }),
+    });
   });
+}
+
+function viewNameFromInput(view: unknown): string | undefined {
+  if (!view || typeof view !== "object") return undefined;
+  const name = (view as Record<string, unknown>).name;
+  return typeof name === "string" ? name : undefined;
 }
 
 export function buildChartDataRequestBody(input: ChartExecutionInput): Record<string, unknown> {

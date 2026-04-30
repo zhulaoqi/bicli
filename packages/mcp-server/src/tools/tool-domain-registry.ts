@@ -61,6 +61,14 @@ import { datartViewCreate, datartViewCreateDef } from "./datart-view-create.js";
 import { datartScheduleList, datartScheduleListDef } from "./datart-schedule-list.js";
 import { datartScheduleCreate, datartScheduleCreateDef } from "./datart-schedule-create.js";
 import { datartScheduleExecute, datartScheduleExecuteDef } from "./datart-schedule-execute.js";
+import { datartScheduleDetail, datartScheduleDetailDef } from "./datart-schedule-detail.js";
+import { datartScheduleLogs, datartScheduleLogsDef } from "./datart-schedule-logs.js";
+import { datartScheduleUpdate, datartScheduleUpdateDef } from "./datart-schedule-update.js";
+import { datartScheduleDelete, datartScheduleDeleteDef } from "./datart-schedule-delete.js";
+import { datartScheduleCopy, datartScheduleCopyDef } from "./datart-schedule-copy.js";
+import { datartScheduleNameCheck, datartScheduleNameCheckDef } from "./datart-schedule-name-check.js";
+import { datartScheduleArchivedList, datartScheduleArchivedListDef, datartScheduleUnarchive, datartScheduleUnarchiveDef } from "./datart-schedule-archive.js";
+import { dataeyeScheduleManage, dataeyeScheduleManageDef } from "./business/schedule-manage.js";
 import { datartShareCreate, datartShareCreateDef } from "./datart-share-create.js";
 import { datartShareList, datartShareListDef } from "./datart-share-list.js";
 import { datartDownloadSubmit, datartDownloadSubmitDef } from "./datart-download-submit.js";
@@ -177,9 +185,18 @@ export const visualizationDomain: ToolDomain = {
     { domain: "visualization", tier: "atomic", name: datartSourceListDef.name, description: datartSourceListDef.description, inputSchema: datartSourceListDef.inputSchema, requiredPermissions: [], handler: datartSourceList },
     { domain: "visualization", tier: "atomic", name: datartViewListDef.name, description: datartViewListDef.description, inputSchema: datartViewListDef.inputSchema, requiredPermissions: [], handler: datartViewList },
     { domain: "visualization", tier: "atomic", name: datartViewCreateDef.name, description: datartViewCreateDef.description, inputSchema: datartViewCreateDef.inputSchema, requiredPermissions: [], handler: datartViewCreate },
+    { domain: "visualization", tier: "business", name: dataeyeScheduleManageDef.name, description: dataeyeScheduleManageDef.description, inputSchema: dataeyeScheduleManageDef.inputSchema, requiredPermissions: [], handler: dataeyeScheduleManage },
     { domain: "visualization", tier: "atomic", name: datartScheduleListDef.name, description: datartScheduleListDef.description, inputSchema: datartScheduleListDef.inputSchema, requiredPermissions: [], handler: datartScheduleList },
     { domain: "visualization", tier: "atomic", name: datartScheduleCreateDef.name, description: datartScheduleCreateDef.description, inputSchema: datartScheduleCreateDef.inputSchema, requiredPermissions: [], handler: datartScheduleCreate },
     { domain: "visualization", tier: "atomic", name: datartScheduleExecuteDef.name, description: datartScheduleExecuteDef.description, inputSchema: datartScheduleExecuteDef.inputSchema, requiredPermissions: [], handler: datartScheduleExecute },
+    { domain: "visualization", tier: "atomic", name: datartScheduleDetailDef.name, description: datartScheduleDetailDef.description, inputSchema: datartScheduleDetailDef.inputSchema, requiredPermissions: [], handler: datartScheduleDetail },
+    { domain: "visualization", tier: "atomic", name: datartScheduleLogsDef.name, description: datartScheduleLogsDef.description, inputSchema: datartScheduleLogsDef.inputSchema, requiredPermissions: [], handler: datartScheduleLogs },
+    { domain: "visualization", tier: "atomic", name: datartScheduleUpdateDef.name, description: datartScheduleUpdateDef.description, inputSchema: datartScheduleUpdateDef.inputSchema, requiredPermissions: [], handler: datartScheduleUpdate },
+    { domain: "visualization", tier: "atomic", name: datartScheduleDeleteDef.name, description: datartScheduleDeleteDef.description, inputSchema: datartScheduleDeleteDef.inputSchema, requiredPermissions: [], destructive: ["archive", "delete"], handler: datartScheduleDelete },
+    { domain: "visualization", tier: "atomic", name: datartScheduleCopyDef.name, description: datartScheduleCopyDef.description, inputSchema: datartScheduleCopyDef.inputSchema, requiredPermissions: [], handler: datartScheduleCopy },
+    { domain: "visualization", tier: "atomic", name: datartScheduleNameCheckDef.name, description: datartScheduleNameCheckDef.description, inputSchema: datartScheduleNameCheckDef.inputSchema, requiredPermissions: [], handler: datartScheduleNameCheck },
+    { domain: "visualization", tier: "atomic", name: datartScheduleArchivedListDef.name, description: datartScheduleArchivedListDef.description, inputSchema: datartScheduleArchivedListDef.inputSchema, requiredPermissions: [], handler: datartScheduleArchivedList },
+    { domain: "visualization", tier: "atomic", name: datartScheduleUnarchiveDef.name, description: datartScheduleUnarchiveDef.description, inputSchema: datartScheduleUnarchiveDef.inputSchema, requiredPermissions: [], handler: datartScheduleUnarchive },
     { domain: "visualization", tier: "atomic", name: datartShareCreateDef.name, description: datartShareCreateDef.description, inputSchema: datartShareCreateDef.inputSchema, requiredPermissions: [], handler: datartShareCreate },
     { domain: "visualization", tier: "atomic", name: datartShareListDef.name, description: datartShareListDef.description, inputSchema: datartShareListDef.inputSchema, requiredPermissions: [], handler: datartShareList },
     { domain: "visualization", tier: "atomic", name: datartDownloadSubmitDef.name, description: datartDownloadSubmitDef.description, inputSchema: datartDownloadSubmitDef.inputSchema, requiredPermissions: [], handler: datartDownloadSubmit },

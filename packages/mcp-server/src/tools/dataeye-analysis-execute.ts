@@ -1,6 +1,9 @@
 import { formatSuccess, formatError, withAuth } from "./base.js";
 import { dateyeRequest } from "./dataeye-proxy.js";
 import { buildSavedAnalysisQuery, type SavedAnalysisDetail } from "./saved-analysis-query-builder.js";
+import { createBlocksFromProfile } from "../chat/result-block-factory.js";
+import { profileDataframe, profileDiagnostics } from "../chat/result-profile.js";
+import type { MessageBlock } from "../chat/message-blocks.js";
 import type { Database } from "../db/connection.js";
 import type { PermissionAdapter } from "../auth/adapter.js";
 
@@ -70,6 +73,7 @@ export async function dateyeAnalysisExecute(db: Database, adapter: PermissionAda
     const summary = extractSummary(detail.type, rawResult, detail.name);
 
     const chartData = extractChartData(detail.type, rawResult, detail.name);
+    const blocks = createAnalysisBlocks(detail.type, rawResult, detail.name);
 
     return formatSuccess({
       analysisId: detail.id,
@@ -82,6 +86,7 @@ export async function dateyeAnalysisExecute(db: Database, adapter: PermissionAda
       summary,
       // __chart__ 由 stream.ts 拦截后通过 SSE 单独发送给前端，不会出现在 LLM 上下文中
       ...(chartData ? { __chart__: chartData } : {}),
+      ...(blocks.length ? { __blocks__: blocks } : {}),
     });
   });
 }
@@ -239,6 +244,77 @@ export function extractChartData(type: number, data: Record<string, unknown>, na
     // 提取失败静默跳过
   }
   return null;
+}
+
+export function createAnalysisBlocks(type: number, data: Record<string, unknown>, name: string): MessageBlock[] {
+  const chartData = extractChartData(type, data, name);
+  if (chartData?.chartType === "line" && chartData.xAxis?.length && chartData.series?.length) {
+    return createBlocksFromProfile(profileDataframe({
+      columns: [{ name: "date" }, ...chartData.series.map((series) => ({ name: series.name }))],
+      rows: chartData.xAxis.map((xValue, index) => [
+        xValue,
+        ...chartData.series!.map((series) => series.data[index] ?? null),
+      ]),
+      pageInfo: { total: chartData.xAxis.length },
+    }), {
+      title: name,
+      sourceTool: "dataeye_analysis_execute",
+    });
+  }
+
+  if (chartData?.chartType === "funnel" && chartData.funnelSteps?.length) {
+    return createBlocksFromProfile(profileDataframe({
+      columns: [{ name: "step" }, { name: "count" }, { name: "rate" }],
+      rows: chartData.funnelSteps.map((step) => [step.name, step.value, step.rate ?? null]),
+      pageInfo: { total: chartData.funnelSteps.length },
+    }), {
+      title: name,
+      sourceTool: "dataeye_analysis_execute",
+    });
+  }
+
+  if (chartData?.chartType === "heatmap" && chartData.heatmapRows?.length) {
+    return createBlocksFromProfile(profileDataframe({
+      columns: [{ name: "date" }, { name: "initialUsers" }, ...Array.from({ length: 8 }, (_, index) => ({ name: `day_${index}` }))],
+      rows: chartData.heatmapRows.map((row) => [
+        row.date,
+        row.initialUsers,
+        ...Array.from({ length: 8 }, (_, index) => row.retentions[index] ?? null),
+      ]),
+      pageInfo: { total: chartData.heatmapRows.length },
+    }), {
+      title: name,
+      sourceTool: "dataeye_analysis_execute",
+      maxRows: 14,
+    });
+  }
+
+  const rows = Array.isArray(data.rows) ? data.rows : [];
+  if (rows.length && rows.every(isRecord)) {
+    const columns = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
+    return createBlocksFromProfile(profileDataframe({
+      columns: columns.map((column) => ({ name: column })),
+      rows: rows.map((row) => columns.map((column) => row[column])),
+      pageInfo: { total: rows.length },
+    }), {
+      title: name,
+      sourceTool: "dataeye_analysis_execute",
+      maxRows: 20,
+    });
+  }
+
+  const summary = extractSummary(type, data, name);
+  if (summary.resultStatus === "empty") {
+    return createBlocksFromProfile({
+      kind: "empty",
+      reason: "本次执行返回 0 条数据；当前工具结果不足以证明原因",
+    }, {
+      title: name,
+      sourceTool: "dataeye_analysis_execute",
+    });
+  }
+
+  return [];
 }
 
 function getEventXAxis(data: Record<string, unknown>): string[] {

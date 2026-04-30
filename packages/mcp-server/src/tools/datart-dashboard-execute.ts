@@ -1,6 +1,8 @@
 import { formatSuccess, formatError, withAuth } from "./base.js";
 import { datartRequest } from "./datart-proxy.js";
 import { summarizeDataframe } from "./datart-data-execute.js";
+import { createBlocksFromProfile, createSummaryBlock } from "../chat/result-block-factory.js";
+import { profileDataframe, profileDiagnostics } from "../chat/result-profile.js";
 import {
   buildChartExecuteRequest,
   buildViewExecuteRequest,
@@ -100,6 +102,7 @@ export async function datartDashboardExecute(db: Database, adapter: PermissionAd
     }
 
     const results = [];
+    const blocks = [];
     const skippedUnits = [...plan.skippedUnits];
     for (const unit of units) {
       try {
@@ -127,6 +130,11 @@ export async function datartDashboardExecute(db: Database, adapter: PermissionAd
           method: "POST",
           body: built.request,
         });
+        blocks.push(...createBlocksFromProfile(profileDataframe(df ?? {}), {
+          title: unit.chartName || unit.viewName || unit.widgetName || unit.unitId,
+          sourceTool: "dataeye_dashboard_execute",
+          maxRows: 20,
+        }));
 
         results.push({
           success: true,
@@ -158,6 +166,14 @@ export async function datartDashboardExecute(db: Database, adapter: PermissionAd
 
     const successCount = results.filter((item) => item.success).length;
     const failedCount = results.length - successCount;
+    const failedResults = results
+      .filter((item) => !item.success)
+      .map((item) => ({
+        unitId: item.unitId,
+        chartName: item.chartName,
+        viewName: item.viewName,
+        error: item.error,
+      }));
     if (successCount === 0) {
       return formatError(
         "EXECUTION_FAILED",
@@ -186,6 +202,26 @@ export async function datartDashboardExecute(db: Database, adapter: PermissionAd
       successCount,
       failedCount,
       results,
+      __blocks__: [
+        createSummaryBlock({
+          title: "看板执行摘要",
+          sourceTool: "dataeye_dashboard_execute",
+          items: [
+            { label: "计划组件", value: plan.units.length },
+            { label: "已执行组件", value: results.length },
+            { label: "成功组件", value: successCount, tone: "success" },
+            { label: "失败组件", value: failedCount, tone: failedCount > 0 ? "warning" : "default" },
+            { label: "跳过组件", value: skippedUnits.length, tone: skippedUnits.length > 0 ? "warning" : "default" },
+          ],
+        }),
+        ...(failedResults.length || skippedUnits.length
+          ? createBlocksFromProfile(profileDiagnostics({ failedResults, skippedUnits }), {
+              title: "看板执行诊断",
+              sourceTool: "dataeye_dashboard_execute",
+            })
+          : []),
+        ...blocks,
+      ],
       message:
         units.length < plan.units.length
           ? `已执行前 ${units.length} 个可执行组件，可通过 maxUnits 调整上限`
