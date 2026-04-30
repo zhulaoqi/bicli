@@ -477,6 +477,11 @@ async function main() {
       name: t.name,
       description: t.description,
       inputSchema: t.inputSchema,
+      routeHints: t.routeHints,
+      knowledgeOnly: t.knowledgeOnly,
+      destructive: t.destructive,
+      tier: t.tier,
+      domain: t.domain,
       execute: async (args) => {
         const handler = toolHandlerMap[t.name];
         if (!handler) {
@@ -623,11 +628,7 @@ ${toolList}
 4. SQL 查询先用 dataeye_datasource_list 获取 sourceId`;
 }
 
-interface ToolDefinition {
-  name: string;
-  description: string;
-  inputSchema: Record<string, unknown>;
-}
+type ToolDefinition = import("./tools/tool-domain-registry.js").ToolDefinition;
 
 interface ChatResult {
   content: string;

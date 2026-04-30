@@ -114,6 +114,12 @@ export interface ToolDefinition {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  /** 透传的 route 元数据，便于下游 selector 直接使用而无需再次查 ToolDef */
+  routeHints?: RouteName[];
+  knowledgeOnly?: boolean;
+  destructive?: boolean | string[];
+  tier?: "business" | "atomic" | "internal";
+  domain?: string;
 }
 
 const alwaysEnabled = () => true;
@@ -299,6 +305,11 @@ export async function loadChatToolRegistry(env: NodeJS.ProcessEnv = process.env)
       name: tool.name,
       description: tool.description || tool.name,
       inputSchema: getToolInputSchema(tool),
+      routeHints: tool.routeHints,
+      knowledgeOnly: tool.knowledgeOnly,
+      destructive: tool.destructive,
+      tier: tool.tier,
+      domain: tool.domain,
     })),
   };
 }
