@@ -1,10 +1,12 @@
 import { tool as defineTool, jsonSchema, stepCountIs } from "ai";
 import type { Tool } from "ai";
-import type { AgentRunState } from "./agent-state.js";
+import type { AgentRunState, ReflectVerdict } from "./agent-state.js";
 import type { AgentDeps } from "./agent-deps.js";
 import { emitSse } from "./agent-deps.js";
 import type { ToolCallRecord } from "../session-store.js";
 import { extractStructuredToolArtifacts } from "../message-blocks.js";
+import { runFinalize } from "./finalizer.js";
+import { runReflect } from "./reflector.js";
 
 const ACT_PROMPT_SUFFIX = `
 
@@ -169,6 +171,164 @@ async function executeToolSpec(
       error: { message: err instanceof Error ? err.message : String(err) },
     });
   }
+}
+
+const REPAIR_PROMPT_SUFFIX = `
+
+⛔ [系统自动纠偏]
+上一轮判定为：未调用工具 / 工具失败被忽略 / 列表幻觉。
+本轮强制要求：
+1. 必须调用相关工具获取实时/真实数据；
+2. 只能基于工具返回值作答，严禁凭记忆复述。
+`;
+
+const DEFAULT_REPAIR_TIMEOUT_MS = 25000;
+const DEFAULT_REPAIR_MAX_STEPS = 5;
+
+export interface RunActRepairOptions {
+  /** 默认 25s */
+  timeoutMs?: number;
+  /** 默认 5 步 */
+  maxSteps?: number;
+  /** force tool 选择策略，默认 "required" */
+  toolChoice?: "required" | "auto";
+}
+
+/**
+ * Repair 阶段：用 toolChoice=required 强制再走一次工具调用，把结果合并到 state.toolCalls。
+ *
+ * 与原 `runRepairRound` 的差别：
+ * - 直接接收 AgentRunState（共享 history/userMessage/route/allowedTools）
+ * - SSE 直接补发 tool_start / tool_result（兼容 retroactive 展示）
+ * - 不返回最终文本（finalize 阶段统一负责）
+ * - 增加 telemetry.repairCount
+ */
+export async function runActRepair(
+  state: AgentRunState,
+  deps: AgentDeps,
+  options: RunActRepairOptions = {},
+): Promise<{ toolCount: number; text: string } | null> {
+  const start = Date.now();
+  const allowedSpecs = deps.toolSpecs.filter((t) => state.allowedToolNames.includes(t.name));
+  if (allowedSpecs.length === 0) {
+    console.warn("[agent.repair] no allowed tools, skipping");
+    return null;
+  }
+
+  const aiTools: Record<string, Tool<any, any>> = {};
+  for (const t of allowedSpecs) {
+    aiTools[t.name] = defineTool<any, string>({
+      description: t.description,
+      inputSchema: jsonSchema<any>(t.inputSchema ?? { type: "object" }),
+      execute: async (args: any) => executeToolSpec(t, args, state, deps),
+    });
+  }
+
+  const repairSystem = deps.systemPrompt + REPAIR_PROMPT_SUFFIX;
+  const messages = [
+    ...state.history.map((m) => ({ role: m.role, content: m.content })),
+    { role: "user" as const, content: state.userMessage },
+  ];
+
+  const generateTextFn = deps.generateTextImpl ?? (await import("ai")).generateText;
+
+  const timeoutMs = options.timeoutMs ?? DEFAULT_REPAIR_TIMEOUT_MS;
+  const maxSteps = options.maxSteps ?? DEFAULT_REPAIR_MAX_STEPS;
+
+  const doRepair = async (): Promise<{ toolCount: number; text: string } | null> => {
+    const result: any = await generateTextFn({
+      model: deps.llm,
+      system: repairSystem,
+      messages: messages as any,
+      tools: aiTools,
+      toolChoice: options.toolChoice ?? "required",
+      maxSteps,
+    });
+    const toolCount = (result.toolCalls?.length ?? 0) as number;
+    if (toolCount === 0) {
+      console.warn("[agent.repair] generateText completed but no tool calls were made");
+      return null;
+    }
+    const rawSteps: any[] = result.steps ?? [];
+    for (const step of rawSteps) {
+      const calls = step.toolCalls ?? [];
+      const results = step.toolResults ?? [];
+      for (const c of calls) {
+        const id = c.toolCallId ?? c.id ?? `repair_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        const name = c.toolName ?? c.name ?? "";
+        const input = c.input ?? c.args ?? {};
+        emitSse(deps.res, "tool_start", { id, name, args: input });
+        state.toolCalls.push({ id, name, args: input, status: "running" });
+      }
+      for (const r of results) {
+        const id = r.toolCallId ?? r.id ?? "";
+        const name = r.toolName ?? r.name ?? "";
+        const output = r.output ?? r.result ?? "";
+        emitSse(deps.res, "tool_result", { id, name, result: output, duration: 0, status: "done" });
+        const rec = state.toolCalls.find((rec) => rec.id === id && rec.name === name);
+        if (rec) {
+          rec.result = output;
+          rec.status = "done";
+        }
+      }
+    }
+    return { toolCount, text: typeof result.text === "string" ? result.text : "" };
+  };
+
+  let outcome: { toolCount: number; text: string } | null = null;
+  try {
+    outcome = await Promise.race([
+      doRepair(),
+      new Promise<null>((resolve) => setTimeout(() => {
+        console.warn(`[agent.repair] timed out after ${timeoutMs}ms`);
+        resolve(null);
+      }, timeoutMs)),
+    ]);
+  } catch (err) {
+    console.warn("[agent.repair] threw:", err instanceof Error ? err.message : String(err));
+    outcome = null;
+  }
+
+  state.telemetry.repairCount += 1;
+  state.telemetry.repairMs += Date.now() - start;
+  return outcome;
+}
+
+const DEFAULT_MAX_REPAIRS = 1;
+
+/**
+ * 顶层 orchestration: Router → Act → Finalize → Reflect →（可选 Repair → Finalize → Reflect）。
+ * Render 阶段 hint 由调用方在 finalize 后单独补；这里只完成"决定 finalText"的部分。
+ */
+export async function runAgentLoop(state: AgentRunState, deps: AgentDeps): Promise<ReflectVerdict> {
+  await runAct(state, deps);
+  await runFinalize(state, deps);
+  let verdict = runReflect(state);
+
+  const maxRepairs = Number(process.env.AGENT_MAX_REPAIRS) || DEFAULT_MAX_REPAIRS;
+
+  while (verdict.verdict === "needs_repair" && state.telemetry.repairCount < maxRepairs) {
+    console.warn(`[agent.loop] reflect verdict=needs_repair reasons=${verdict.reasons.join(",")}, starting repair round`);
+    const repair = await runActRepair(state, deps);
+    if (!repair || repair.toolCount === 0) {
+      // repair 失败：保留当前 finalText，但把 verdict 降级为 fallback 提示
+      verdict = {
+        verdict: "fallback",
+        reasons: [...verdict.reasons, "repair_failed"],
+        text: state.finalText || "⚠️ 工具未能完成此次请求，请稍后重试或换用其他模型。",
+      };
+      break;
+    }
+    state.finalText = "";
+    await runFinalize(state, deps);
+    verdict = runReflect(state);
+  }
+
+  if (verdict.verdict === "fallback" && verdict.text) {
+    state.finalText = verdict.text;
+  }
+  state.reflectVerdict = verdict;
+  return verdict;
 }
 
 /** 用于 Reflect / Finalize 阶段：把工具结果浓缩成短摘要供模型继续使用。 */
