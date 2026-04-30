@@ -37,7 +37,7 @@ export async function dateyeUserAssignRole(db: Database, adapter: PermissionAdap
 
 export const dateyeUserAssignRoleDef = {
   name: "dataeye_user_assign_role",
-  description: "为组织内指定用户分配角色或用户组，覆盖已有分配。调用前必须在对话中得到用户明确确认。",
+  description: "单步为已有用户分配角色或用户组，会覆盖已有分配。新增成员完整流程请优先使用 dataeye_user_onboard；本工具属于写操作，调用前必须得到用户明确确认。",
   inputSchema: {
     type: "object" as const,
     properties: {

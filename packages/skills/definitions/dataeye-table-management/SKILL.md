@@ -10,6 +10,7 @@ triggers:
   - 表结构设计
   - 创建表
 requiredTools:
+  - dataeye_table_import_create
   - dataeye_project_list
   - dataeye_table_validate_name
   - dataeye_table_create
@@ -17,6 +18,10 @@ requiredTools:
 ---
 
 # DataEye 数据表管理向导
+
+## 首选业务动作
+
+如果用户是“上传文件建表 / Excel 导入 / CSV 导入 / 根据文件创建表”，优先使用 `dataeye_table_import_create`。该工具会根据样例推断字段、校验表名并生成 dryRun 预览；不要要求用户手写完整字段 JSON。
 
 ## 创建数据表完整流程
 

@@ -16,6 +16,7 @@ import { eq, and } from "drizzle-orm";
 import { buildSystemPrompt as buildSP } from "./chat/system-prompt.js";
 import { routeDataEyeHelpSkill } from "./chat/skill-routing.js";
 import { buildPageContextPrompt, hasPageContextEvidence, sanitizePageContext } from "./chat/page-context.js";
+import { loadChatToolRegistry } from "./tools/tool-domain-registry.js";
 
 const PORT = parseInt(process.env.MCP_HTTP_PORT || "3211", 10);
 const HOST = process.env.MCP_HTTP_HOST || "0.0.0.0";
@@ -766,109 +767,10 @@ let toolDefCache: ToolDefinition[] = [];
 async function initToolHandlers() {
   if (Object.keys(toolHandlerMap).length > 0) return;
 
-  const mods = await Promise.all([
-    import("./tools/dataeye-project-list.js"),
-    import("./tools/dataeye-event-list.js"),
-    import("./tools/dataeye-event-property.js"),
-    import("./tools/dataeye-table-list.js"),
-    import("./tools/dataeye-table-detail.js"),
-    import("./tools/dataeye-dws-table.js"),
-    import("./tools/dataeye-datasource-list.js"),
-    import("./tools/dataeye-sql-query.js"),
-    import("./tools/self-permissions.js"),
-    import("./tools/user-list.js"),
-    import("./tools/data-query.js"),
-    import("./tools/form-query.js"),
-    import("./tools/dataeye-event-group-list.js"),   // mods[12]
-    import("./tools/dataeye-event-group-add.js"),    // mods[13]
-    import("./tools/dataeye-event-create.js"),       // mods[14]
-    import("./tools/dataeye-event-update.js"),       // mods[15]
-    import("./tools/dataeye-event-status.js"),       // mods[16]
-    import("./tools/dataeye-event-property-save.js"), // mods[17]
-    import("./tools/dataeye-event-analysis.js"),     // mods[18]
-    import("./tools/dataeye-table-validate-name.js"), // mods[19]
-    import("./tools/dataeye-table-create.js"),       // mods[20]
-    import("./tools/dataeye-table-update-status.js"), // mods[21]
-    import("./tools/dataeye-user-list.js"),          // mods[22]
-    import("./tools/dataeye-role-list.js"),          // mods[23]
-    import("./tools/dataeye-product-create.js"),     // mods[24]
-    import("./tools/dataeye-analysis-list.js"),      // mods[25]
-    import("./tools/dataeye-analysis-execute.js"),   // mods[26]
-    import("./tools/dataeye-user-create.js"),        // mods[27]
-    import("./tools/dataeye-role-create.js"),        // mods[28]
-    import("./tools/dataeye-user-assign-role.js"),   // mods[29]
-    // 可视化资产工具（仅配置对应 API URL 时生效）
-    import("./tools/datart-dashboard-list.js"),      // mods[30]
-    import("./tools/datart-dashboard-detail.js"),    // mods[31]
-    import("./tools/datart-data-execute.js"),         // mods[32]
-    import("./tools/datart-data-test-execute.js"),    // mods[33]
-    import("./tools/datart-source-list.js"),          // mods[34]
-    import("./tools/datart-view-list.js"),             // mods[35]
-    import("./tools/datart-view-create.js"),           // mods[36]
-    import("./tools/datart-schedule-list.js"),         // mods[37]
-    import("./tools/datart-schedule-create.js"),       // mods[38]
-    import("./tools/datart-schedule-execute.js"),      // mods[39]
-    import("./tools/datart-share-create.js"),          // mods[40]
-    import("./tools/datart-org-list.js"),              // mods[41]
-  ]);
-
-  const enableDatart = !!process.env.DATART_API_URL;
-
-  const entries: Array<[string, any, any]> = [
-    ["dataeye_project_list", mods[0].dateyeProjectList, mods[0].dateyeProjectListDef],
-    ["dataeye_event_list", mods[1].dateyeEventList, mods[1].dateyeEventListDef],
-    ["dataeye_event_property", mods[2].dateyeEventProperty, mods[2].dateyeEventPropertyDef],
-    ["dataeye_table_list", mods[3].dateyeTableList, mods[3].dateyeTableListDef],
-    ["dataeye_table_detail", mods[4].dateyeTableDetail, mods[4].dateyeTableDetailDef],
-    ["dataeye_dws_table", mods[5].dateyeDwsTable, mods[5].dateyeDwsTableDef],
-    ["dataeye_datasource_list", mods[6].dateyeDatasourceList, mods[6].dateyeDatasourceListDef],
-    ["dataeye_sql_query", mods[7].dateyeSqlQuery, mods[7].dateyeSqlQueryDef],
-    ["self_permissions", mods[8].selfPermissions, mods[8].selfPermissionsSchema],
-    ["dataeye_event_group_list",    mods[12].dateyeEventGroupList,    mods[12].dateyeEventGroupListDef],
-    ["dataeye_event_group_add",     mods[13].dateyeEventGroupAdd,     mods[13].dateyeEventGroupAddDef],
-    ["dataeye_event_create",        mods[14].dateyeEventCreate,       mods[14].dateyeEventCreateDef],
-    ["dataeye_event_update",        mods[15].dateyeEventUpdate,       mods[15].dateyeEventUpdateDef],
-    ["dataeye_event_status",        mods[16].dateyeEventStatus,       mods[16].dateyeEventStatusDef],
-    ["dataeye_event_property_save", mods[17].dateyeEventPropertySave, mods[17].dateyeEventPropertySaveDef],
-    ["dataeye_event_analysis",      mods[18].dateyeEventAnalysis,     mods[18].dateyeEventAnalysisDef],
-    ["dataeye_table_validate_name", mods[19].dateyeTableValidateName, mods[19].dateyeTableValidateNameDef],
-    ["dataeye_table_create",        mods[20].dateyeTableCreate,       mods[20].dateyeTableCreateDef],
-    ["dataeye_table_update_status", mods[21].dateyeTableUpdateStatus, mods[21].dateyeTableUpdateStatusDef],
-    ["dataeye_user_list",           mods[22].dateyeUserList,          mods[22].dateyeUserListDef],
-    ["dataeye_role_list",           mods[23].dateyeRoleList,          mods[23].dateyeRoleListDef],
-    ["dataeye_product_create",      mods[24].dateyeProductCreate,     mods[24].dateyeProductCreateDef],
-    ["dataeye_analysis_list",       mods[25].dateyeAnalysisList,      mods[25].dateyeAnalysisListDef],
-    ["dataeye_analysis_execute",    mods[26].dateyeAnalysisExecute,   mods[26].dateyeAnalysisExecuteDef],
-    ["dataeye_user_create",         mods[27].dateyeUserCreate,        mods[27].dateyeUserCreateDef],
-    ["dataeye_role_create",         mods[28].dateyeRoleCreate,        mods[28].dateyeRoleCreateDef],
-    ["dataeye_user_assign_role",    mods[29].dateyeUserAssignRole,    mods[29].dateyeUserAssignRoleDef],
-    // 可视化资产工具（条件加载）
-    ...(enableDatart ? [
-      [mods[30].datartDashboardListDef.name,     mods[30].datartDashboardList,     mods[30].datartDashboardListDef],
-      [mods[31].datartDashboardDetailDef.name,   mods[31].datartDashboardDetail,   mods[31].datartDashboardDetailDef],
-      [mods[32].datartDataExecuteDef.name,       mods[32].datartDataExecute,       mods[32].datartDataExecuteDef],
-      [mods[33].datartDataTestExecuteDef.name,   mods[33].datartDataTestExecute,   mods[33].datartDataTestExecuteDef],
-      [mods[34].datartSourceListDef.name,        mods[34].datartSourceList,        mods[34].datartSourceListDef],
-      [mods[35].datartViewListDef.name,          mods[35].datartViewList,          mods[35].datartViewListDef],
-      [mods[36].datartViewCreateDef.name,        mods[36].datartViewCreate,        mods[36].datartViewCreateDef],
-      [mods[37].datartScheduleListDef.name,      mods[37].datartScheduleList,      mods[37].datartScheduleListDef],
-      [mods[38].datartScheduleCreateDef.name,    mods[38].datartScheduleCreate,    mods[38].datartScheduleCreateDef],
-      [mods[39].datartScheduleExecuteDef.name,   mods[39].datartScheduleExecute,   mods[39].datartScheduleExecuteDef],
-      [mods[40].datartShareCreateDef.name,       mods[40].datartShareCreate,       mods[40].datartShareCreateDef],
-      [mods[41].datartOrgListDef.name,           mods[41].datartOrgList,           mods[41].datartOrgListDef],
-    ] as Array<[string, any, any]> : []),
-  ];
-
-  for (const [name, handler, def] of entries) {
-    toolHandlerMap[name] = handler;
-    if (def?.inputSchema) {
-      toolDefCache.push({ name, description: def.description || name, inputSchema: def.inputSchema });
-    } else if (def) {
-      // zod schema — 需要转换，暂时跳过
-      toolDefCache.push({ name, description: def.description || name, inputSchema: { type: "object" } });
-    }
-  }
-  console.error(`[chat] Initialized ${entries.length} tool handlers for /chat endpoint`);
+  const registry = await loadChatToolRegistry(process.env);
+  toolHandlerMap = registry.handlers;
+  toolDefCache = registry.definitions;
+  console.error(`[chat] Initialized ${toolDefCache.length} tool handlers for /chat endpoint`);
 }
 
 function buildDemoHTML(port: number): string {

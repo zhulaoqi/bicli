@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { extractChartData, extractSummary } from "../dataeye-analysis-execute.js";
 import { buildSavedAnalysisQuery } from "../saved-analysis-query-builder.js";
 
 describe("buildSavedAnalysisQuery compatibility coverage", () => {
@@ -122,5 +123,52 @@ describe("buildSavedAnalysisQuery compatibility coverage", () => {
     expect(result.ok && result.body.filterInfos).toEqual([
       { columnName: "hday", calculateSymbol: "BETWEEN", ftv: ["2025-12-05", "2025-12-09"], productId: 17103 },
     ]);
+  });
+});
+
+describe("saved analysis execution result extraction", () => {
+  it("extracts event analysis summary and chart data from direct report response shape", () => {
+    const report = {
+      header: ["hday", "total_times"],
+      chart: {
+        x: ["2025-12-05", "2025-12-06"],
+        y: {
+          total_times: [
+            {
+              groupCol: ["总计"],
+              value: [12, 18],
+            },
+          ],
+        },
+      },
+      rows: [
+        { hday: "2025-12-05", total_times: 12 },
+        { hday: "2025-12-06", total_times: 18 },
+      ],
+    };
+
+    expect(extractSummary(1, report, "总计没有显示")).toMatchObject({
+      dateRange: "2025-12-05 ~ 2025-12-06",
+      dataPoints: 2,
+      rowCount: 2,
+      metrics: [
+        {
+          name: "total_times / 总计",
+          values: [12, 18],
+          total: 30,
+        },
+      ],
+    });
+    expect(extractChartData(1, report, "总计没有显示")).toMatchObject({
+      chartType: "line",
+      title: "总计没有显示",
+      xAxis: ["2025-12-05", "2025-12-06"],
+      series: [
+        {
+          name: "total_times / 总计",
+          data: [12, 18],
+        },
+      ],
+    });
   });
 });

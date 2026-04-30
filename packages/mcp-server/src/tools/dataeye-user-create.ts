@@ -40,7 +40,7 @@ export async function dateyeUserCreate(db: Database, adapter: PermissionAdapter,
 
 export const dateyeUserCreateDef = {
   name: "dataeye_user_create",
-  description: "在当前组织中创建新用户，可同时分配角色和用户组。调用前必须在对话中得到用户明确确认。",
+  description: "单步创建组织用户，可同时传入角色和用户组。完整新增成员流程请优先使用 dataeye_user_onboard；本工具属于写操作，调用前必须得到用户明确确认。",
   inputSchema: {
     type: "object" as const,
     properties: {

@@ -54,7 +54,7 @@ export async function dateyeTableCreate(db: Database, adapter: PermissionAdapter
 
 export const dateyeTableCreateDef = {
   name: "dataeye_table_create",
-  description: "在 StarRocks 中创建数据表。ctType=1 为日志表（允许重复），ctType=3 为主键表（唯一）。创建前请先调用 dataeye_table_validate_name 校验表名，并在对话中得到用户明确确认后再调用。",
+  description: "单步创建数据表。上传文件或样例数据建表请优先使用 dataeye_table_import_create；本工具需要调用方已准备完整字段定义，并在对话中得到用户明确确认后再调用。",
   inputSchema: {
     type: "object" as const,
     properties: {

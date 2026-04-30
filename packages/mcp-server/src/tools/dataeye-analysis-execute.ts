@@ -78,6 +78,7 @@ export async function dateyeAnalysisExecute(db: Database, adapter: PermissionAda
       projectId: detail.projectId,
       productId: detail.productId,
       description: detail.represent,
+      query: summarizeExecutionBody(built.body),
       summary,
       // __chart__ 由 stream.ts 拦截后通过 SSE 单独发送给前端，不会出现在 LLM 上下文中
       ...(chartData ? { __chart__: chartData } : {}),
@@ -100,21 +101,23 @@ function summarizeExecutionBody(body: Record<string, unknown>) {
 /**
  * 根据分析类型提取结构化摘要
  */
-function extractSummary(type: number, data: Record<string, unknown>, name: string): Record<string, unknown> {
+export function extractSummary(type: number, data: Record<string, unknown>, name: string): Record<string, unknown> {
   try {
     if (type === 1) {
       // 事件分析：提取趋势数据
-      const xAxis = (data.xAxis as string[]) ?? [];
-      const series = (data.series as Array<{ name: string; data: number[] }>) ?? [];
+      const xAxis = getEventXAxis(data);
+      const series = getEventSeries(data);
       const totalMap = (data.total as Record<string, number>) ?? {};
+      const rows = Array.isArray(data.rows) ? data.rows : [];
 
       return {
         dateRange: xAxis.length > 0 ? `${xAxis[0]} ~ ${xAxis[xAxis.length - 1]}` : "unknown",
         dataPoints: xAxis.length,
+        rowCount: rows.length,
         metrics: series.slice(0, 5).map((s) => ({
           name: s.name,
           values: s.data?.slice(0, 7) ?? [], // 最近7条
-          total: totalMap[s.name] ?? null,
+          total: totalMap[s.name] ?? sumNumberSeries(s.data),
         })),
         hint: series.length > 5 ? `还有 ${series.length - 5} 条指标未展示` : undefined,
       };
@@ -182,11 +185,11 @@ export interface AnalysisChartData {
   heatmapRows?: Array<{ date: string; initialUsers: number; retentions: (number | null)[] }>;
 }
 
-function extractChartData(type: number, data: Record<string, unknown>, name: string): AnalysisChartData | null {
+export function extractChartData(type: number, data: Record<string, unknown>, name: string): AnalysisChartData | null {
   try {
     if (type === 1) {
-      const xAxis = (data.xAxis as string[]) ?? [];
-      const series = (data.series as Array<{ name: string; data: (number | null)[] }>) ?? [];
+      const xAxis = getEventXAxis(data);
+      const series = getEventSeries(data);
       if (!xAxis.length || !series.length) return null;
       return {
         chartType: "line",
@@ -227,6 +230,68 @@ function extractChartData(type: number, data: Record<string, unknown>, name: str
     // 提取失败静默跳过
   }
   return null;
+}
+
+function getEventXAxis(data: Record<string, unknown>): string[] {
+  if (Array.isArray(data.xAxis)) {
+    return data.xAxis.map(String);
+  }
+  const chart = isRecord(data.chart) ? data.chart : {};
+  if (Array.isArray(chart.x)) {
+    return chart.x.map(String);
+  }
+  return [];
+}
+
+function getEventSeries(data: Record<string, unknown>): Array<{ name: string; data: (number | null)[] }> {
+  if (Array.isArray(data.series)) {
+    return data.series.map((series, index) => {
+      const item = isRecord(series) ? series : {};
+      return {
+        name: String(item.name ?? `指标${index + 1}`),
+        data: toNumberArray(item.data),
+      };
+    });
+  }
+
+  const chart = isRecord(data.chart) ? data.chart : {};
+  const y = isRecord(chart.y) ? chart.y : {};
+  const result: Array<{ name: string; data: (number | null)[] }> = [];
+
+  for (const [metricName, metricValue] of Object.entries(y)) {
+    const groups = Array.isArray(metricValue) ? metricValue : [];
+    for (const [index, group] of groups.entries()) {
+      const groupRecord = isRecord(group) ? group : {};
+      const groupName = Array.isArray(groupRecord.groupCol)
+        ? groupRecord.groupCol.map(String).join(" / ")
+        : String(groupRecord.groupCol ?? "");
+      result.push({
+        name: groupName ? `${metricName} / ${groupName}` : `${metricName}${groups.length > 1 ? ` #${index + 1}` : ""}`,
+        data: toNumberArray(groupRecord.value),
+      });
+    }
+  }
+
+  return result;
+}
+
+function toNumberArray(value: unknown): (number | null)[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => {
+    if (item === null || item === undefined || item === "") return null;
+    const num = Number(item);
+    return Number.isFinite(num) ? num : null;
+  });
+}
+
+function sumNumberSeries(values: Array<number | null | undefined>): number | null {
+  const nums = values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  if (nums.length === 0) return null;
+  return nums.reduce((sum, value) => sum + value, 0);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 export const dateyeAnalysisExecuteDef = {

@@ -14,6 +14,7 @@ triggers:
   - 邀请成员
   - 用户权限
 requiredTools:
+  - dataeye_user_onboard
   - dataeye_role_list
   - dataeye_user_list
   - dataeye_project_list
@@ -36,6 +37,10 @@ requiredTools:
 
 - **角色** 决定用户能看到哪些菜单按钮（`permissionIdList`）以及哪些项目/产品数据
 - **用户** 创建时可直接绑定角色，也可后续通过 `dataeye_user_assign_role` 调整
+
+## 首选业务动作
+
+当用户要“新增成员 / 创建账号 / 开通用户并分配角色”时，优先使用 `dataeye_user_onboard` 完成重复校验、角色校验、dryRun 预览、创建和验证。只有在用户明确要求单独调整已有用户角色时，才使用 `dataeye_user_assign_role`。
 
 ---
 
@@ -78,7 +83,7 @@ requiredTools:
 **执行流程：**
 
 ```
-步骤1: dataeye_role_list()
+步骤1: 如果角色不明确，dataeye_role_list()
    → 获取可分配的角色列表，展示给用户选择
 
 步骤2: 收集用户信息
@@ -86,10 +91,11 @@ requiredTools:
    → username 显示名（必填）
    → 选择角色（可以是上一步列出的角色 ID）
 
-步骤3: dataeye_user_create(email, username, roleIdList, dryRun=true)
-   → 预览
+步骤3: dataeye_user_onboard(email, username, roleIdList, dryRun=true)
+   → 预览完整创建与绑定计划
 
-步骤4: 用户确认后 dataeye_user_create(dryRun=false)
+步骤4: 用户确认后 dataeye_user_onboard(dryRun=false)
+   → 创建用户、绑定角色、验证结果
 ```
 
 **角色展示格式：**

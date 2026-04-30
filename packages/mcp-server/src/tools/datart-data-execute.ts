@@ -9,7 +9,35 @@ type Dataframe = {
   pageInfo?: { total?: number };
 };
 
-function summarizeDataframe(df: Dataframe, title: string) {
+type ChartDataSectionField = {
+  colName?: string;
+  aggregate?: string;
+  type?: string;
+  category?: string;
+  filter?: {
+    condition?: {
+      operator?: string;
+      value?: unknown;
+    };
+  };
+};
+
+type ChartDataSection = {
+  type?: string;
+  rows?: ChartDataSectionField[];
+};
+
+export type ChartExecutionInput = {
+  viewId?: unknown;
+  vizId?: unknown;
+  vizType?: unknown;
+  pageSize?: unknown;
+  config?: unknown;
+  view?: unknown;
+  requestBody?: unknown;
+};
+
+export function summarizeDataframe(df: Dataframe, title: string) {
   const cols = (df.columns ?? []).map((c) => c.name);
   const rows = df.rows ?? [];
   const total = df.pageInfo?.total ?? rows.length;
@@ -30,20 +58,16 @@ function summarizeDataframe(df: Dataframe, title: string) {
 
 export async function datartDataExecute(db: Database, adapter: PermissionAdapter, args: Record<string, unknown>) {
   return withAuth(db, adapter, args, [], async (_db, cleanArgs, context) => {
-    const { viewId, vizId, vizType = "DATACHART", pageSize = 100 } = cleanArgs;
+    const { viewId, vizId, vizType = "DATACHART" } = cleanArgs;
     if (!viewId) return formatError("INVALID_ARGS", "viewId is required");
+    if (vizType === "DASHBOARD") {
+      return formatError(
+        "INVALID_ARGS",
+        "看板不能作为单个图表直接执行；请先调用 dataeye_dashboard_execute，由系统自动执行看板内多个图表",
+      );
+    }
 
-    const body: Record<string, unknown> = {
-      viewId,
-      vizType,
-      pageInfo: { pageNo: 1, pageSize },
-      columns: [],
-      aggregators: [],
-      groups: [],
-      filters: [],
-      orders: [],
-    };
-    if (vizId) body.vizId = vizId;
+    const body = buildChartDataRequestBody(cleanArgs);
 
     const df = await datartRequest<Dataframe>("/api/v1/data-provider/execute", context, {
       method: "POST",
@@ -57,17 +81,161 @@ export async function datartDataExecute(db: Database, adapter: PermissionAdapter
   });
 }
 
+export function buildChartDataRequestBody(input: ChartExecutionInput): Record<string, unknown> {
+  if (isRecord(input.requestBody)) {
+    return {
+      ...input.requestBody,
+      viewId: input.requestBody.viewId ?? input.viewId,
+      vizId: input.requestBody.vizId ?? input.vizId,
+      vizType: input.requestBody.vizType ?? input.vizType ?? "DATACHART",
+    };
+  }
+
+  const config = parseRecord(input.config);
+  const chartConfig = parseRecord(config.chartConfig);
+  const datas = asArray<ChartDataSection>(chartConfig.datas ?? config.datas);
+  const view = parseRecord(input.view);
+  const viewConfig = parseRecord(view.config);
+  const body: Record<string, unknown> = {
+    ...viewConfig,
+    viewId: input.viewId,
+    vizType: input.vizType || "DATACHART",
+    pageInfo: { pageNo: 1, pageSize: Number(input.pageSize ?? 100) },
+    columns: buildColumns(datas, config.aggregation !== false),
+    aggregators: buildAggregators(datas, config.aggregation !== false),
+    groups: buildGroups(datas, config.aggregation !== false),
+    filters: buildFilters(datas),
+    orders: [],
+    functionColumns: [],
+    script: false,
+  };
+  if (input.vizId) body.vizId = input.vizId;
+  return body;
+}
+
+function buildAggregators(datas: ChartDataSection[], aggregation: boolean): Array<Record<string, unknown>> {
+  if (!aggregation) return [];
+  return uniqueByColumn(
+    datas
+      .flatMap((section) => {
+        if (["aggregate", "size", "info"].includes(String(section.type))) {
+          return section.rows ?? [];
+        }
+        if (section.type === "mixed") {
+          return (section.rows ?? []).filter((row) => row.type === "NUMERIC");
+        }
+        return [];
+      })
+      .filter((row) => row.colName)
+      .map((row) => ({
+        alias: buildAlias(row),
+        column: [row.colName],
+        sqlOperator: row.aggregate,
+      })),
+  );
+}
+
+function buildGroups(datas: ChartDataSection[], aggregation: boolean): Array<Record<string, unknown>> {
+  if (!aggregation) return [];
+  return uniqueByColumn(
+    datas
+      .flatMap((section) => {
+        if (["group", "color"].includes(String(section.type))) {
+          return section.rows ?? [];
+        }
+        if (section.type === "mixed") {
+          return (section.rows ?? []).filter((row) => ["DATE", "STRING"].includes(String(row.type)));
+        }
+        return [];
+      })
+      .filter((row) => row.colName)
+      .map((row) => ({
+        alias: buildAlias(row),
+        column: [row.colName],
+      })),
+  );
+}
+
+function buildColumns(datas: ChartDataSection[], aggregation: boolean): Array<Record<string, unknown>> {
+  if (aggregation) return [];
+  return uniqueByColumn(
+    datas
+      .flatMap((section) => {
+        if (["color", "aggregate", "size", "info", "mixed", "group"].includes(String(section.type))) {
+          return section.rows ?? [];
+        }
+        return [];
+      })
+      .filter((row) => row.colName && row.category !== "aggregateComputedField")
+      .map((row) => ({
+        alias: buildAlias(row),
+        column: [row.colName],
+      })),
+  );
+}
+
+function buildFilters(datas: ChartDataSection[]): Array<Record<string, unknown>> {
+  return datas
+    .filter((section) => section.type === "filter")
+    .flatMap((section) => section.rows ?? [])
+    .filter((row) => row.colName && row.filter?.condition?.operator)
+    .map((row) => ({
+      column: [row.colName],
+      sqlOperator: row.filter?.condition?.operator,
+      values: row.filter?.condition?.value,
+    }));
+}
+
+function buildAlias(row: ChartDataSectionField): string {
+  if (!row.aggregate || row.aggregate === "NONE") return String(row.colName);
+  return `${row.aggregate}(${row.colName})`;
+}
+
+function uniqueByColumn(items: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = JSON.stringify([item.column, item.sqlOperator]);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export function parseRecord(value: unknown): Record<string, unknown> {
+  if (!value) return {};
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return isRecord(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  return isRecord(value) ? value : {};
+}
+
+function asArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? value as T[] : [];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
 export const datartDataExecuteDef = {
   name: "dataeye_chart_data_execute",
-  description: "执行 DataEye 数据视图或高级图表的数据查询，返回结果摘要（前5行 + 列信息）",
+  description: "执行 DataEye 数据视图或单个高级图表的数据查询，返回结果摘要（前5行 + 列信息）。查看或分析数据看板真实数据请优先使用 dataeye_dashboard_execute，不要用本工具直接执行数据看板",
   inputSchema: {
     type: "object",
     properties: {
       viewId: { type: "string", description: "数据视图 ID，从看板详情或数据视图列表工具获取" },
       vizId: { type: "string", description: "图表 ID（可选）" },
-      vizType: { type: "string", description: "DATACHART 或 DASHBOARD", default: "DATACHART" },
+      vizType: { type: "string", description: "仅支持 DATACHART；数据看板请调用 dataeye_dashboard_execute", default: "DATACHART" },
       chartName: { type: "string", description: "图表名称（用于显示，可选）" },
       pageSize: { type: "number", description: "最多返回行数，默认 100", default: 100 },
+      config: { type: "object", description: "图表保存配置（可选，通常由看板执行工具内部传入）" },
+      view: { type: "object", description: "数据视图配置（可选，通常由看板执行工具内部传入）" },
+      requestBody: { type: "object", description: "已构造好的数据查询请求体（可选）" },
     },
     required: ["viewId"],
   },

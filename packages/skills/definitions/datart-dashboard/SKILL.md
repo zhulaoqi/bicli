@@ -14,12 +14,17 @@ triggers:
 requiredTools:
   - dataeye_dashboard_list
   - dataeye_dashboard_detail
+  - dataeye_dashboard_execute
   - dataeye_chart_data_execute
 ---
 
 # DataEye 数据看板查询与分析 Skill
 
-帮助用户查找 DataEye 数据看板，执行高级图表数据查询，并给出数据洞察。
+帮助用户查找 DataEye 数据看板，执行看板真实数据查询，并给出数据洞察。
+
+## 首选业务动作
+
+用户要“查看/分析看板真实数据”时，优先调用 `dataeye_dashboard_execute`。不要把看板 ID 当作 `viewId` 传给 `dataeye_chart_data_execute`；单图表工具只用于用户明确要求执行某个高级图表。
 
 ## 工作流程
 
@@ -50,13 +55,10 @@ requiredTools:
 ```
 步骤1: dataeye_dashboard_list() → 找到目标看板 ID
 
-步骤2: dataeye_dashboard_detail(dashboardId=<id>)
-   → 获取看板结构，提取所有 widget（图表部件）和关联的 viewId
+步骤2: dataeye_dashboard_execute(dashboardId=<id>)
+   → 自动获取看板结构并逐个执行看板中的图表
 
-步骤3: 对核心 widget 调用 dataeye_chart_data_execute(viewId=<id>, ...)
-   → 获取各图表数据
-
-步骤4: 汇总解读，输出结论
+步骤3: 汇总解读，输出结论
 ```
 
 ### 场景三：用户说"分析这个看板的结果"
