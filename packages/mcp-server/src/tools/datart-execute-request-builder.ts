@@ -3,6 +3,7 @@ type ChartDataSectionField = {
   aggregate?: string;
   type?: string;
   category?: string;
+  expression?: string;
   sort?: { type?: string };
   calculate?: { type?: string; value?: unknown };
   filter?: {
@@ -94,7 +95,7 @@ export function buildChartExecuteRequest(input: ChartExecuteRequestInput): Build
     groups: buildGroups(datas, aggregation, fieldPaths),
     filters: buildFilters(datas),
     orders: buildOrders(datas, fieldPaths),
-    functionColumns: buildFunctionColumns(view, datas),
+    functionColumns: buildFunctionColumns(view, config, datas),
     calculate: buildCalculate(datas),
     pageInfo: { pageNo: 1, pageSize, countTotal: false },
     script: false,
@@ -299,15 +300,32 @@ function buildCalculate(datas: ChartDataSection[]): Array<Record<string, unknown
     }));
 }
 
-function buildFunctionColumns(view: Record<string, unknown>, datas: ChartDataSection[]): Array<Record<string, unknown>> {
+function buildFunctionColumns(
+  view: Record<string, unknown>,
+  config: Record<string, unknown>,
+  datas: ChartDataSection[],
+): Array<Record<string, unknown>> {
   const usedColumns = new Set(datas.flatMap((section) => section.rows ?? []).map((row) => row.colName).filter(Boolean));
-  return asArray<Record<string, unknown>>(view.computedFields)
+  const rowComputedFields = datas
+    .flatMap((section) => section.rows ?? [])
+    .filter((row) => row.colName && row.expression)
+    .map((row) => ({
+      name: row.colName,
+      category: row.category,
+      expression: row.expression,
+    }));
+  const computedFields = [
+    ...asArray<Record<string, unknown>>(view.computedFields),
+    ...asArray<Record<string, unknown>>(config.computedFields),
+    ...rowComputedFields,
+  ];
+  return uniqueByAlias(computedFields
     .filter((field) => typeof field.name === "string" && usedColumns.has(field.name))
     .map((field) => ({
       alias: field.name,
       category: field.category,
       snippet: field.expression,
-    }));
+    })));
 }
 
 function buildSummary(config: Record<string, unknown>): Record<string, unknown> {
@@ -369,6 +387,15 @@ function uniqueByColumn(items: Array<Record<string, unknown>>): Array<Record<str
     const key = JSON.stringify([item.column, item.sqlOperator]);
     if (seen.has(key)) return false;
     seen.add(key);
+    return true;
+  });
+}
+
+function uniqueByAlias(items: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  const seen = new Set<unknown>();
+  return items.filter((item) => {
+    if (seen.has(item.alias)) return false;
+    seen.add(item.alias);
     return true;
   });
 }

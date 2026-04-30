@@ -137,6 +137,64 @@ describe("datart execute request builder", () => {
     ]);
   });
 
+  it("keeps date-level aliases and sends functionColumns for computed date groups", () => {
+    const result = buildChartExecuteRequest({
+      viewId: "view_date",
+      config: {
+        aggregation: true,
+        computedFields: [
+          {
+            name: "date@date_level_delimiter@AGG_DATE_DAY",
+            expression: "AGG_DATE_DAY([date])",
+            type: "DATE",
+            category: "dateLevelComputedField",
+          },
+        ],
+        chartConfig: {
+          datas: [
+            {
+              type: "group",
+              rows: [
+                {
+                  colName: "date@date_level_delimiter@AGG_DATE_DAY",
+                  type: "DATE",
+                  category: "dateLevelComputedField",
+                  expression: "AGG_DATE_DAY([date])",
+                },
+              ],
+            },
+            {
+              type: "aggregate",
+              rows: [{ colName: "impressions", type: "NUMERIC", aggregate: "SUM" }],
+            },
+          ],
+        },
+      },
+      view: {
+        id: "view_date",
+        meta: [
+          { name: "date", path: ["date"] },
+          { name: "impressions", path: ["impressions"] },
+        ],
+      },
+    });
+
+    expectOk(result);
+    expect(result.request.groups).toEqual([
+      {
+        alias: "date@date_level_delimiter@AGG_DATE_DAY",
+        column: ["date@date_level_delimiter@AGG_DATE_DAY"],
+      },
+    ]);
+    expect(result.request.functionColumns).toEqual([
+      {
+        alias: "date@date_level_delimiter@AGG_DATE_DAY",
+        category: "dateLevelComputedField",
+        snippet: "AGG_DATE_DAY([date])",
+      },
+    ]);
+  });
+
   it("builds raw chart requests with selected columns when aggregation is disabled", () => {
     const result = buildChartExecuteRequest({
       viewId: "view_1",
