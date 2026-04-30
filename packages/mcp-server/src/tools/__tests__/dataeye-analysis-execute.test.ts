@@ -171,4 +171,19 @@ describe("saved analysis execution result extraction", () => {
       ],
     });
   });
+
+  it("marks empty event analysis results as inconclusive without inventing root causes", () => {
+    const summary = extractSummary(1, { chart: { x: [], y: {} }, rows: [], total: {} }, "总计没有显示");
+
+    expect(summary).toMatchObject({
+      resultStatus: "empty",
+      dataPoints: 0,
+      rowCount: 0,
+      interpretation: {
+        conclusion: "本次执行返回 0 条数据。",
+        evidence: "工具结果仅能证明当前查询条件下无数据点或无返回行。",
+      },
+    });
+    expect(JSON.stringify(summary)).not.toMatch(/SDK|未注册|未上报|命名|埋点/);
+  });
 });

@@ -548,6 +548,7 @@ async function main() {
       tools: toolSpecs,
       store,
       skipNoToolListGuard: (routed.skill?.name.startsWith("dataeye-help-") ?? false) || hasPageContextEvidence(sanitizedPageContext.context),
+      hasPageContextEvidence: hasPageContextEvidence(sanitizedPageContext.context),
       customConfig,
     });
   } catch (e: any) {

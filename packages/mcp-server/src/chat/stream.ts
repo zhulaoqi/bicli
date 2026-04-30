@@ -30,8 +30,76 @@ export interface StreamChatParams {
   tools: StreamToolSpec[];
   store: SessionStore;
   skipNoToolListGuard?: boolean;
+  hasPageContextEvidence?: boolean;
   maxSteps?: number;
   customConfig?: CustomModelConfig;
+}
+
+export function shouldRequireToolCall(userMessage: string): boolean {
+  const text = userMessage.trim();
+  const lower = text.toLowerCase();
+  if (!text) return false;
+
+  const concreteDataMarkers = [
+    /\b(id|ID)\s*[=:：]?\s*\d+\b/,
+    /\d{3,}/,
+    /当前页面|当前图|这个图|这个看板|这个分析|该产品|该项目|这个事件/,
+    /结果|数量|多少|列表|明细|raw\s*data/i,
+  ];
+  const realtimeActionMarkers = [
+    /执行|跑一下|运行|查一下|查询|查看|帮我看|列出|有哪些|有多少|统计|分析.*结果/,
+    /下载|导出|分享|生成.*链接/,
+  ];
+  const helpOnlyMarkers = [
+    /是什么|什么意思|概念|原理|怎么配置|如何配置|怎么使用|如何使用|说明|文档|教程|解释一下/,
+  ];
+
+  const hasRealtimeAction = realtimeActionMarkers.some((pattern) => pattern.test(text));
+  const hasConcreteData = concreteDataMarkers.some((pattern) => pattern.test(text));
+  const helpOnly = helpOnlyMarkers.some((pattern) => pattern.test(text));
+
+  if (hasRealtimeAction) return true;
+  if (hasConcreteData && /为什么|为何|原因|异常|为空|没有数据|没数据|不显示/.test(text)) return true;
+  if (helpOnly && !hasConcreteData) return false;
+  if (hasConcreteData && /看板|分析|图表|事件|产品|项目|用户|角色|数据表/.test(text)) return true;
+  if (/\b(my_|cgt|event|analysis|dashboard|chart)\b/i.test(lower) && hasConcreteData) return true;
+  return false;
+}
+
+export function sanitizeEmptyAnalysisSpeculation(params: {
+  text: string;
+  toolCalls: ToolCallRecord[];
+}): string {
+  if (!hasEmptyAnalysisResult(params.toolCalls)) return params.text;
+  if (!hasUnverifiedRootCauseSpeculation(params.text)) return params.text;
+
+  return [
+    "本次执行返回 0 条数据。",
+    "",
+    "基于当前工具结果，只能确认：在本次分析 ID、时间范围、产品和筛选条件下没有返回数据点或明细行。",
+    "当前结果不能证明事件配置或上报链路存在问题，也不能证明数据源异常；这些都需要额外查询事件配置、原始日志或数据源状态后才能判断。",
+    "",
+    "可以继续做的验证：查询该产品下相关事件配置、检查同时间范围的原始明细、或放宽时间/筛选条件后重新执行。",
+  ].join("\n");
+}
+
+function hasEmptyAnalysisResult(toolCalls: ToolCallRecord[]): boolean {
+  return toolCalls.some((call) => {
+    if (call.name !== "dataeye_analysis_execute" || !call.result) return false;
+    try {
+      const parsed = typeof call.result === "string" ? JSON.parse(call.result) : call.result;
+      const summary = parsed?.data?.summary;
+      return summary?.resultStatus === "empty" ||
+        (Number(summary?.dataPoints) === 0 && Number(summary?.rowCount) === 0);
+    } catch {
+      return false;
+    }
+  });
+}
+
+function hasUnverifiedRootCauseSpeculation(text: string): boolean {
+  const speculationMarkers = /(初步诊断|可能原因|可能是|原因包括|建议操作|尚未|未注册|未上报|没有上报|命名不一致|SDK|埋点|数据源异常|用户群.*覆盖)/i;
+  return speculationMarkers.test(text);
 }
 
 function sseSend(res: Response, event: string, data: unknown) {
@@ -59,6 +127,7 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
     tools,
     store,
     skipNoToolListGuard = false,
+    hasPageContextEvidence = false,
     maxSteps = 8,
     customConfig,
   } = params;
@@ -347,12 +416,57 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
       fullText = warning;
     }
 
+    let noToolGuardHandled = false;
+
+    if (recordedCalls.length === 0 && !hasFakeToolCall && !hasPageContextEvidence && shouldRequireToolCall(userMessage)) {
+      noToolGuardHandled = true;
+      console.warn("[stream] required tool-call intent detected but no tools were called — starting repair round");
+      sseSend(res, "text_replace", { content: "⏳ 这个问题需要查询系统实时数据，正在重新调用工具获取结果，请稍候…" });
+
+      const repair = await runRepairRound({
+        llm,
+        systemPrompt,
+        messages,
+        aiTools,
+      });
+
+      if (repair && repair.toolCount > 0) {
+        console.log(`[stream] required-tool repair succeeded: ${repair.toolCount} tool calls, textLen=${repair.text.length}`);
+        for (const step of repair.steps) {
+          for (const call of step.toolCalls) {
+            sseSend(res, "tool_start", {
+              id: call.toolCallId,
+              name: call.toolName,
+              args: call.input ?? {},
+            });
+          }
+          for (const tr of step.toolResults) {
+            sseSend(res, "tool_result", {
+              id: tr.toolCallId,
+              name: tr.toolName,
+              result: tr.output ?? "",
+              duration: 0,
+              status: "done",
+            });
+          }
+        }
+        sseSend(res, "text_replace", { content: repair.text });
+        fullText = repair.text;
+      } else {
+        const replacement =
+          `⚠️ 这个问题需要查询系统实时数据，但本轮模型没有执行任何工具调用。\n\n` +
+          `为避免输出推断或历史缓存内容，我已阻止本次回答。请重新发送问题，或换用支持 function calling 的模型后重试。`;
+        sseSend(res, "text_replace", { content: replacement });
+        fullText = replacement;
+      }
+    }
+
     // ── 幻觉列表探测 + 自动纠偏 ─────────────────────────────────────────────
     // 当本轮没有任何工具调用但输出大量列表项时，判定为从历史/记忆中复读数据。
     // 先尝试自动纠偏（runRepairRound）：用 toolChoice:required 重跑一次，
     // 若纠偏成功则展示真实结果；若失败则降级为原有警告提示。
     // 用 text_replace 事件通知前端替换已显示内容，用户看不到幻觉数据。
-    if (!skipNoToolListGuard && recordedCalls.length === 0 && !hasFakeToolCall) {
+    if (!noToolGuardHandled && !skipNoToolListGuard && recordedCalls.length === 0 && !hasFakeToolCall) {
       const listItemCount = (fullText.match(/^\s*[-•*◆▸◇]\s+.+|^\s*\d+[.)、]\s+.+/gm) || []).length;
       if (listItemCount > 8) {
         console.warn(`[stream] hallucination detected: ${listItemCount} list items, no tool calls — starting repair round`);
@@ -417,6 +531,16 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
       }
       fullText = fallback;
       sseSend(res, "text_delta", { content: fallback });
+    }
+
+    const guardedText = sanitizeEmptyAnalysisSpeculation({
+      text: fullText,
+      toolCalls: recordedCalls,
+    });
+    if (guardedText !== fullText) {
+      console.warn("[stream] replaced unverified empty-analysis speculation");
+      sseSend(res, "text_replace", { content: guardedText });
+      fullText = guardedText;
     }
   } catch (e) {
     errored = true;

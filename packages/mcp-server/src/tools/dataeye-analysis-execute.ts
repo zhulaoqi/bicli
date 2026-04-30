@@ -109,8 +109,10 @@ export function extractSummary(type: number, data: Record<string, unknown>, name
       const series = getEventSeries(data);
       const totalMap = (data.total as Record<string, number>) ?? {};
       const rows = Array.isArray(data.rows) ? data.rows : [];
+      const resultStatus = xAxis.length === 0 && rows.length === 0 && series.length === 0 ? "empty" : "ok";
 
       return {
+        resultStatus,
         dateRange: xAxis.length > 0 ? `${xAxis[0]} ~ ${xAxis[xAxis.length - 1]}` : "unknown",
         dataPoints: xAxis.length,
         rowCount: rows.length,
@@ -119,6 +121,13 @@ export function extractSummary(type: number, data: Record<string, unknown>, name
           values: s.data?.slice(0, 7) ?? [], // 最近7条
           total: totalMap[s.name] ?? sumNumberSeries(s.data),
         })),
+        interpretation: resultStatus === "empty"
+          ? {
+              conclusion: "本次执行返回 0 条数据。",
+              evidence: "工具结果仅能证明当前查询条件下无数据点或无返回行。",
+              guardrail: "不要输出未经验证的原因推断；若需要排查原因，必须先调用能验证该原因的工具或让用户提供日志证据。",
+            }
+          : undefined,
         hint: series.length > 5 ? `还有 ${series.length - 5} 条指标未展示` : undefined,
       };
     }

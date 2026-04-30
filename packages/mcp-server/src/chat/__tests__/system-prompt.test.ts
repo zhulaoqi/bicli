@@ -26,6 +26,24 @@ describe("extractFollowUps", () => {
       "创建一个新用户",
     ]);
   });
+
+  it("removes visible follow ups that start with whether you need me", () => {
+    const result = extractFollowUps([
+      "执行结果：本次返回 0 条数据。",
+      "",
+      "是否需要我：",
+      "🔍 查询该产品下所有已启用事件？",
+      "🛠 创建一个可执行的事件分析？",
+      "📄 导出 raw data？",
+    ].join("\n"));
+
+    expect(result.clean).toBe("执行结果：本次返回 0 条数据。");
+    expect(result.followUps).toEqual([
+      "查询该产品下所有已启用事件？",
+      "创建一个可执行的事件分析？",
+      "导出 raw data？",
+    ]);
+  });
 });
 
 describe("buildSystemPrompt", () => {
@@ -51,5 +69,12 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("优先使用页面上下文");
     expect(prompt).toContain("不要因为用户说“分析当前页面/当前图”就误查自助分析列表");
     expect(prompt).toContain("上下文过期");
+  });
+
+  it("forbids unverified root-cause speculation for empty analysis results", () => {
+    const prompt = buildSystemPrompt({ userId: 1, role: "admin" }, [], []);
+
+    expect(prompt).toContain("空结果只能说明当前查询条件下返回 0 条数据");
+    expect(prompt).toContain("不得推断事件未注册、SDK 未上报、命名不一致");
   });
 });

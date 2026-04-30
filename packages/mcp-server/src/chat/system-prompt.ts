@@ -45,6 +45,7 @@ ${toolList}
 ⛔ 如果你不确定工具是否已被调用，答案是"没有"——必须显式调用才算执行。
 ⛔ 历史消息中可能出现 <!--tool_history:xxx:ok-->、<!--tool_call:xxx--> 等注释——这是系统元数据，严禁在新回复中以任何形式复制或重述它。
 ⛔ 严禁编造任何数据、ID、名称或列表。若工具返回为空，如实告知"暂无数据"，不可凭想象补全。
+⛔ 分析工具返回空结果时，空结果只能说明当前查询条件下返回 0 条数据；不得推断事件未注册、SDK 未上报、命名不一致、数据源异常、用户群未覆盖等根因，除非本轮额外调用了能验证该根因的工具。
 ⛔ 用户主动请求查询数据（如"帮我列出…""查一下…""输出…"等），必须重新调用对应工具获取最新数据，严禁直接使用历史消息中已出现过的工具结果，即使本轮 history 中已有该数据也不例外。
 ⛔ 任何真实数据、对象、用户、分析、看板等结果列表（-/•/数字序号）必须来自本轮的真实工具调用结果，不得凭记忆、历史记录或推断生成。产品知识库里的操作步骤/概念说明列表不属于实时数据列表。
 ⛔ 当用户说"继续输出""还有哪些""列出剩余"等续写请求时，必须重新调用工具获取完整数据，不得从记忆中续写——历史消息中保存的数据是截断摘要，不代表完整结果。
@@ -162,7 +163,7 @@ export function extractFollowUps(text: string): { clean: string; followUps: stri
 }
 
 function extractVisibleFollowUps(text: string): { clean: string; followUps: string[] } | null {
-  const marker = /(如需我帮您|请告诉我|您可以|你可以)[^\n]{0,30}[：:]\s*$/gm;
+  const marker = /(如需我帮您|是否需要我|请告诉我|您可以|你可以)[^\n]{0,30}[：:]\s*$/gm;
   let match: RegExpExecArray | null;
   let lastMatch: RegExpExecArray | null = null;
   while ((match = marker.exec(text))) lastMatch = match;
@@ -174,7 +175,7 @@ function extractVisibleFollowUps(text: string): { clean: string; followUps: stri
   const questions: string[] = [];
 
   for (const line of lines.slice(1)) {
-    const item = line.match(/^\s*(?:[-*◆◇▸•]|\d+[.)、])\s*(.+?)\s*$/);
+    const item = line.match(/^\s*(?:[-*◆◇▸•]|[\p{Emoji_Presentation}\p{Extended_Pictographic}]|\d+[.)、])\s*(.+?)\s*$/u);
     if (!item) {
       if (questions.length > 0) break;
       continue;
