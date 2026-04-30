@@ -2,16 +2,110 @@ import type { AgentRunState, ReflectVerdict } from "./agent-state.js";
 import type { ToolCallRecord } from "../session-store.js";
 
 /**
- * 注：当前文件是 P0 Chunk 5 的占位实现，仅提供 finalize 阶段所需的 `buildToolResultFallback`。
- * 完整规则层（漏调工具/伪成功/未验证根因/工具元数据残留）将在 Chunk 5 一并迁入。
+ * Reflect 阶段规则层。
+ *
+ * 输入：完整 state（含 finalText、toolCalls、route）
+ * 输出：ReflectVerdict
+ *   - ok：通过，进入 Render
+ *   - needs_repair：本轮存在质量问题，应触发一次 repair（再走 Act → Finalize）
+ *   - fallback：直接用 verdict.text 替换 finalText，并跳过 repair（避免无意义重复）
  */
 
+const FAKE_TOOL_CALL_PATTERNS = [
+  /<tool_code>/i,
+  /```\s*json\s*\{[\s\S]*?"name"\s*:/,
+  /<tool_use>/i,
+  /<function_calls>/i,
+  /<!--[\s\S]*?tool_(call|result):[\s\S]*?-->/i,
+];
+
+const TOOL_HISTORY_COMMENT_PATTERN = /<!--[\s\S]*?tool_(history|call|result):[\s\S]*?-->/gi;
+
 export function runReflect(state: AgentRunState): ReflectVerdict {
-  // 占位：默认通过
-  return {
-    verdict: "ok",
-    reasons: [],
-  };
+  const reasons: string[] = [];
+  const text = state.finalText;
+  const route = state.route.route;
+
+  // 1. fake tool-call 文本：直接 fallback（不要再走 repair，因为模型 prompt 错了）
+  if (FAKE_TOOL_CALL_PATTERNS.some((p) => p.test(text))) {
+    return {
+      verdict: "fallback",
+      reasons: ["fake_tool_call_in_text"],
+      text:
+        "⚠️ 当前模型将工具调用以文本形式输出，而非通过 function calling 真正执行。\n\n" +
+        "这意味着工具未被调用，操作未执行。请切换到支持 function calling 的模型（如 qwen-plus / qwen-max）后重试。",
+    };
+  }
+
+  // 2. tool history comment 残留：清洗后 ok
+  if (TOOL_HISTORY_COMMENT_PATTERN.test(text)) {
+    const cleaned = stripToolHistoryComments(text);
+    if (cleaned !== text) {
+      return {
+        verdict: "fallback",
+        reasons: ["leaked_tool_history_comment"],
+        text: cleaned,
+      };
+    }
+  }
+
+  // 3. 历史截断标记残留
+  const withoutHistoryArtifacts = sanitizeVisibleHistoryArtifacts(text);
+  if (withoutHistoryArtifacts !== text) {
+    return {
+      verdict: "fallback",
+      reasons: ["leaked_history_truncation_marker"],
+      text: withoutHistoryArtifacts,
+    };
+  }
+
+  // 4. 实时/诊断/写路由必须调用工具：未调用任何工具就触发 repair
+  const needsTool = route === "realtime_query" || route === "diagnosis" || route === "write_action";
+  if (needsTool && state.toolCalls.length === 0) {
+    reasons.push("missing_required_tool");
+  }
+
+  // 5. 大量列表项 + 0 工具调用 → 视为幻觉
+  if (state.toolCalls.length === 0 && needsTool) {
+    const listItemCount = (text.match(/^\s*[-•*◆▸◇]\s+.+|^\s*\d+[.)、]\s+.+/gm) || []).length;
+    if (listItemCount > 8) {
+      reasons.push("hallucinated_list_without_tools");
+    }
+  }
+
+  // 6. analysis empty + finalize 推断未验证根因 → fallback 替换文本
+  if (hasEmptyAnalysisResult(state.toolCalls) && hasUnverifiedRootCauseSpeculation(text)) {
+    return {
+      verdict: "fallback",
+      reasons: ["unverified_empty_analysis_speculation"],
+      text: replaceEmptyAnalysisSpeculation(),
+    };
+  }
+
+  // 7. 工具失败但 finalize 没承认错误 → 标记 repair
+  if (hasFailedToolButFinalizeIgnoresIt(state.toolCalls, text)) {
+    reasons.push("ignored_tool_failure");
+  }
+
+  if (reasons.length > 0) {
+    return { verdict: "needs_repair", reasons };
+  }
+  return { verdict: "ok", reasons: [] };
+}
+
+export function sanitizeEmptyAnalysisSpeculation(params: {
+  text: string;
+  toolCalls: ToolCallRecord[];
+}): string {
+  if (!hasEmptyAnalysisResult(params.toolCalls)) return params.text;
+  if (!hasUnverifiedRootCauseSpeculation(params.text)) return params.text;
+  return replaceEmptyAnalysisSpeculation();
+}
+
+export function sanitizeVisibleHistoryArtifacts(text: string): string {
+  return text
+    .replace(/\n?\s*…?\[回复已截断，共\s*\d+\s*字符。如需再次查看完整数据，请重新查询。]\s*/g, "")
+    .trim();
 }
 
 export function buildToolResultFallback(toolCalls: ToolCallRecord[]): string {
@@ -52,6 +146,21 @@ export function buildToolResultFallback(toolCalls: ToolCallRecord[]): string {
     "",
     "工具已返回结果，但模型本轮没有继续生成自然语言总结。请缩小问题范围后重试，或指定要查看的字段。",
   ].join("\n");
+}
+
+function replaceEmptyAnalysisSpeculation(): string {
+  return [
+    "本次执行返回 0 条数据。",
+    "",
+    "基于当前工具结果，只能确认：在本次分析 ID、时间范围、产品和筛选条件下没有返回数据点或明细行。",
+    "当前结果不能证明事件配置或上报链路存在问题，也不能证明数据源异常；这些都需要额外查询事件配置、原始日志或数据源状态后才能判断。",
+    "",
+    "可以继续做的验证：查询该产品下相关事件配置、检查同时间范围的原始明细、或放宽时间/筛选条件后重新执行。",
+  ].join("\n");
+}
+
+function stripToolHistoryComments(text: string): string {
+  return text.replace(TOOL_HISTORY_COMMENT_PATTERN, "").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 function parseToolResult(result: unknown): any | null {
@@ -99,4 +208,30 @@ function summarizeToolResult(call: ToolCallRecord): string | null {
   }
 
   return `${call.name} 已成功返回结果。`;
+}
+
+function hasEmptyAnalysisResult(toolCalls: ToolCallRecord[]): boolean {
+  return toolCalls.some((call) => {
+    if (call.name !== "dataeye_analysis_execute" || !call.result) return false;
+    try {
+      const parsed = typeof call.result === "string" ? JSON.parse(call.result) : call.result;
+      const summary = parsed?.data?.summary;
+      return summary?.resultStatus === "empty" ||
+        (Number(summary?.dataPoints) === 0 && Number(summary?.rowCount) === 0);
+    } catch {
+      return false;
+    }
+  });
+}
+
+function hasUnverifiedRootCauseSpeculation(text: string): boolean {
+  const speculationMarkers = /(初步诊断|可能原因|可能是|原因包括|建议操作|尚未|未注册|未上报|没有上报|命名不一致|SDK|埋点|数据源异常|用户群.*覆盖)/i;
+  return speculationMarkers.test(text);
+}
+
+function hasFailedToolButFinalizeIgnoresIt(toolCalls: ToolCallRecord[], text: string): boolean {
+  const failed = toolCalls.find((c) => c.status === "error");
+  if (!failed) return false;
+  if (text.includes("失败") || text.includes("错误") || text.includes("无法") || text.includes("权限")) return false;
+  return true;
 }

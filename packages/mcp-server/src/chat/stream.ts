@@ -6,6 +6,11 @@ import type { SessionStore, ToolCallRecord } from "./session-store.js";
 import { extractFollowUps } from "./system-prompt.js";
 import { runRepairRound } from "./response-repair.js";
 import { extractStructuredToolArtifacts, type MessageBlock } from "./message-blocks.js";
+import {
+  sanitizeEmptyAnalysisSpeculation as reflectorSanitizeEmptyAnalysisSpeculation,
+  sanitizeVisibleHistoryArtifacts as reflectorSanitizeVisibleHistoryArtifacts,
+  buildToolResultFallback as reflectorBuildToolResultFallback,
+} from "./agent/reflector.js";
 
 export interface StreamToolSpec {
   name: string;
@@ -51,62 +56,28 @@ export function shouldRequireToolCall(userMessage: string): boolean {
     /下载|导出|分享|生成.*链接/,
   ];
   const helpOnlyMarkers = [
-    /是什么|什么意思|概念|原理|怎么配置|如何配置|怎么使用|如何使用|说明|文档|教程|解释一下/,
+    /是什么|什么意思|概念|原理|怎么配置|如何配置|怎么使用|如何使用|说明|文档|教程|解释一下|流程|步骤|区别|最佳实践|接入/,
   ];
 
   const hasRealtimeAction = realtimeActionMarkers.some((pattern) => pattern.test(text));
   const hasConcreteData = concreteDataMarkers.some((pattern) => pattern.test(text));
   const helpOnly = helpOnlyMarkers.some((pattern) => pattern.test(text));
 
+  if (helpOnly && !hasConcreteData) return false;
   if (hasRealtimeAction) return true;
   if (hasConcreteData && /为什么|为何|原因|异常|为空|没有数据|没数据|不显示/.test(text)) return true;
-  if (helpOnly && !hasConcreteData) return false;
   if (hasConcreteData && /看板|分析|图表|事件|产品|项目|用户|角色|数据表/.test(text)) return true;
   if (/\b(my_|cgt|event|analysis|dashboard|chart)\b/i.test(lower) && hasConcreteData) return true;
   return false;
 }
 
-export function sanitizeEmptyAnalysisSpeculation(params: {
-  text: string;
-  toolCalls: ToolCallRecord[];
-}): string {
-  if (!hasEmptyAnalysisResult(params.toolCalls)) return params.text;
-  if (!hasUnverifiedRootCauseSpeculation(params.text)) return params.text;
-
-  return [
-    "本次执行返回 0 条数据。",
-    "",
-    "基于当前工具结果，只能确认：在本次分析 ID、时间范围、产品和筛选条件下没有返回数据点或明细行。",
-    "当前结果不能证明事件配置或上报链路存在问题，也不能证明数据源异常；这些都需要额外查询事件配置、原始日志或数据源状态后才能判断。",
-    "",
-    "可以继续做的验证：查询该产品下相关事件配置、检查同时间范围的原始明细、或放宽时间/筛选条件后重新执行。",
-  ].join("\n");
-}
-
-export function sanitizeVisibleHistoryArtifacts(text: string): string {
-  return text
-    .replace(/\n?\s*…?\[回复已截断，共\s*\d+\s*字符。如需再次查看完整数据，请重新查询。]\s*/g, "")
-    .trim();
-}
-
-function hasEmptyAnalysisResult(toolCalls: ToolCallRecord[]): boolean {
-  return toolCalls.some((call) => {
-    if (call.name !== "dataeye_analysis_execute" || !call.result) return false;
-    try {
-      const parsed = typeof call.result === "string" ? JSON.parse(call.result) : call.result;
-      const summary = parsed?.data?.summary;
-      return summary?.resultStatus === "empty" ||
-        (Number(summary?.dataPoints) === 0 && Number(summary?.rowCount) === 0);
-    } catch {
-      return false;
-    }
-  });
-}
-
-function hasUnverifiedRootCauseSpeculation(text: string): boolean {
-  const speculationMarkers = /(初步诊断|可能原因|可能是|原因包括|建议操作|尚未|未注册|未上报|没有上报|命名不一致|SDK|埋点|数据源异常|用户群.*覆盖)/i;
-  return speculationMarkers.test(text);
-}
+// 已迁移到 chat/agent/reflector.ts，这里保留 thin re-export 以兼容现有测试。
+// @deprecated 请改用 `chat/agent/reflector.ts` 中的版本。
+export const sanitizeEmptyAnalysisSpeculation = reflectorSanitizeEmptyAnalysisSpeculation;
+// @deprecated 请改用 `chat/agent/reflector.ts` 中的版本。
+export const sanitizeVisibleHistoryArtifacts = reflectorSanitizeVisibleHistoryArtifacts;
+// @deprecated 请改用 `chat/agent/reflector.ts` 中的版本。
+export const buildToolResultFallback = reflectorBuildToolResultFallback;
 
 function sseSend(res: Response, event: string, data: unknown) {
   res.write(`event: ${event}\n`);
@@ -530,8 +501,7 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
     if (!fullText.trim() && !errored) {
       let fallback: string;
       if (recordedCalls.length > 0) {
-        const toolNames = recordedCalls.map((r) => r.name).join(", ");
-        fallback = `⚠️ 已调用工具（${toolNames}），但模型没有生成最终文字总结。\n\n这通常不是“不支持 function call”，而是工具返回后模型未继续输出、结果过大被截断，或上下文约束过强。请稍后重试，或缩小问题范围。`;
+        fallback = buildToolResultFallback(recordedCalls);
       } else {
         // 模型返回空响应（finishReason=other），常见原因是上下文过长、模型服务返回空流，
         // 只有在出现 fake tool-call 文本时才应提示“不支持 function calling”。
