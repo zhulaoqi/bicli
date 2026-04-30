@@ -1,5 +1,10 @@
 import { formatSuccess, formatError, withAuth } from "./base.js";
 import { datartRequest } from "./datart-proxy.js";
+import {
+  buildChartDataRequestBody as buildSharedChartDataRequestBody,
+  buildChartExecuteRequest,
+  buildViewExecuteRequest,
+} from "./datart-execute-request-builder.js";
 import type { Database } from "../db/connection.js";
 import type { PermissionAdapter } from "../auth/adapter.js";
 
@@ -67,7 +72,17 @@ export async function datartDataExecute(db: Database, adapter: PermissionAdapter
       );
     }
 
-    const body = buildChartDataRequestBody(cleanArgs);
+    const built = vizType === "VIEW"
+      ? buildViewExecuteRequest({
+          viewId,
+          viewName: cleanArgs.viewName || cleanArgs.chartName,
+          pageSize: cleanArgs.pageSize,
+          view: cleanArgs.view,
+          params: cleanArgs.params,
+        })
+      : buildChartExecuteRequest(cleanArgs);
+    if (!built.ok) return formatError(built.code, built.message);
+    const body = built.request;
 
     const df = await datartRequest<Dataframe>("/api/v1/data-provider/execute", context, {
       method: "POST",
@@ -82,35 +97,7 @@ export async function datartDataExecute(db: Database, adapter: PermissionAdapter
 }
 
 export function buildChartDataRequestBody(input: ChartExecutionInput): Record<string, unknown> {
-  if (isRecord(input.requestBody)) {
-    return {
-      ...input.requestBody,
-      viewId: input.requestBody.viewId ?? input.viewId,
-      vizId: input.requestBody.vizId ?? input.vizId,
-      vizType: input.requestBody.vizType ?? input.vizType ?? "DATACHART",
-    };
-  }
-
-  const config = parseRecord(input.config);
-  const chartConfig = parseRecord(config.chartConfig);
-  const datas = asArray<ChartDataSection>(chartConfig.datas ?? config.datas);
-  const view = parseRecord(input.view);
-  const viewConfig = parseRecord(view.config);
-  const body: Record<string, unknown> = {
-    ...viewConfig,
-    viewId: input.viewId,
-    vizType: input.vizType || "DATACHART",
-    pageInfo: { pageNo: 1, pageSize: Number(input.pageSize ?? 100) },
-    columns: buildColumns(datas, config.aggregation !== false),
-    aggregators: buildAggregators(datas, config.aggregation !== false),
-    groups: buildGroups(datas, config.aggregation !== false),
-    filters: buildFilters(datas),
-    orders: [],
-    functionColumns: [],
-    script: false,
-  };
-  if (input.vizId) body.vizId = input.vizId;
-  return body;
+  return buildSharedChartDataRequestBody(input);
 }
 
 function buildAggregators(datas: ChartDataSection[], aggregation: boolean): Array<Record<string, unknown>> {
@@ -224,7 +211,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export const datartDataExecuteDef = {
   name: "dataeye_chart_data_execute",
-  description: "执行 DataEye 数据视图或单个高级图表的数据查询，返回结果摘要（前5行 + 列信息）。查看或分析数据看板真实数据请优先使用 dataeye_dashboard_execute，不要用本工具直接执行数据看板",
+  description: "执行 DataEye 单个图表或直接视图的数据查询，返回结果摘要（前5行 + 列信息）。执行完整可视化资源请优先使用 dataeye_dashboard_execute；不要把看板类资源、folderId 或用户给出的名称直接传给本工具",
   inputSchema: {
     type: "object",
     properties: {

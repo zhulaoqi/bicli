@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { sanitizeEmptyAnalysisSpeculation, shouldRequireToolCall } from "../stream.js";
+import {
+  sanitizeEmptyAnalysisSpeculation,
+  sanitizeVisibleHistoryArtifacts,
+  shouldRequireToolCall,
+} from "../stream.js";
 
 describe("sanitizeEmptyAnalysisSpeculation", () => {
   it("replaces unverified root-cause speculation after an empty analysis result", () => {
@@ -74,5 +78,16 @@ describe("shouldRequireToolCall", () => {
   it("requires tools when a help-like question points to concrete current data", () => {
     expect(shouldRequireToolCall("为什么 2661 这个事件分析没有数据")).toBe(true);
     expect(shouldRequireToolCall("帮我看看当前页面数据为什么为空")).toBe(true);
+  });
+});
+
+describe("sanitizeVisibleHistoryArtifacts", () => {
+  it("removes visible history truncation markers copied by the model", () => {
+    expect(sanitizeVisibleHistoryArtifacts([
+      "已真实调用工具执行，以下是结果：",
+      "详细数据略",
+      "",
+      "…[回复已截断，共 961 字符。如需再次查看完整数据，请重新查询。]",
+    ].join("\n"))).toBe("已真实调用工具执行，以下是结果：\n详细数据略");
   });
 });

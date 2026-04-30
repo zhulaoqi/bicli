@@ -1,6 +1,12 @@
 import { formatSuccess, formatError, withAuth } from "./base.js";
 import { datartRequest } from "./datart-proxy.js";
-import { buildChartDataRequestBody, parseRecord, summarizeDataframe } from "./datart-data-execute.js";
+import { summarizeDataframe } from "./datart-data-execute.js";
+import {
+  buildChartExecuteRequest,
+  buildViewExecuteRequest,
+  parseRecord,
+} from "./datart-execute-request-builder.js";
+import { resolveDashboardRef } from "./datart-resource-resolver.js";
 import type { Database } from "../db/connection.js";
 import type { PermissionAdapter } from "../auth/adapter.js";
 
@@ -23,84 +29,257 @@ type ViewItem = {
   name?: string;
   sourceId?: string;
   config?: unknown;
+  meta?: unknown;
+  model?: unknown;
+  computedFields?: unknown;
+};
+
+type WidgetItem = {
+  id: string;
+  name?: string;
+  datachartId?: string;
+  datachart_id?: string;
+  viewIds?: string[];
+  view_ids?: string[];
 };
 
 type DashboardDetail = {
   id: string;
   name?: string;
+  widgets?: WidgetItem[];
   datacharts?: DatachartItem[];
   views?: ViewItem[];
 };
 
+type DashboardExecutableUnit = {
+  unitId: string;
+  unitType: "chart" | "view";
+  widgetId?: string;
+  widgetName?: string;
+  chartId?: string;
+  chartName?: string;
+  viewId: string;
+  viewName?: string;
+  chartConfig?: unknown;
+  view?: ViewItem;
+};
+
+type SkippedUnit = {
+  unitId?: string;
+  widgetId?: string;
+  reason: string;
+};
+
 export async function datartDashboardExecute(db: Database, adapter: PermissionAdapter, args: Record<string, unknown>) {
   return withAuth(db, adapter, args, [], async (_db, cleanArgs, context) => {
-    const dashboardId = cleanArgs.dashboardId;
-    if (!dashboardId) return formatError("INVALID_ARGS", "dashboardId is required");
+    if (!cleanArgs.dashboardId && !cleanArgs.dashboardName && !cleanArgs.dashboardRef) {
+      return formatError("INVALID_ARGS", "dashboardId, dashboardName or dashboardRef is required");
+    }
 
     const pageSize = Number(cleanArgs.pageSize ?? 100);
-    const maxCharts = Math.max(1, Math.min(Number(cleanArgs.maxCharts ?? 20), 50));
-    const detail = await datartRequest<DashboardDetail>(`/api/v1/viz/dashboards/${dashboardId}`, context);
+    const maxUnits = Math.max(1, Math.min(Number(cleanArgs.maxUnits ?? cleanArgs.maxCharts ?? 20), 50));
+    const includeCharts = cleanArgs.includeCharts !== false;
+    const includeViews = cleanArgs.includeViews !== false;
+    const resolved = await resolveDashboardRef(context, cleanArgs);
 
-    if (!detail) return formatError("NOT_FOUND", `看板 ${dashboardId} 不存在或无权访问`);
+    if (!resolved.resolved) {
+      return formatError(resolved.code, resolved.message);
+    }
 
-    const charts = resolveExecutableCharts(detail).slice(0, maxCharts);
-    if (!charts.length) {
+    const detail = await datartRequest<DashboardDetail>(`/api/v1/viz/dashboards/${resolved.resource.id}`, context);
+
+    if (!detail) return formatError("NOT_FOUND", `看板 ${resolved.resource.id} 不存在或无权访问`);
+
+    const plan = resolveDashboardExecutableUnits(detail, { includeCharts, includeViews });
+    const units = plan.units.slice(0, maxUnits);
+    if (!units.length) {
       return formatError(
-        "NO_EXECUTABLE_CHARTS",
-        "看板中没有找到可执行图表。请先确认看板详情返回了图表 ID 和关联的数据视图 ID",
+        "NO_EXECUTABLE_UNITS",
+        "看板中没有找到可执行图表或视图。请先确认看板详情返回了 widgets、图表 ID 和关联的数据视图 ID",
       );
     }
 
     const results = [];
-    for (const chart of charts) {
+    const skippedUnits = [...plan.skippedUnits];
+    for (const unit of units) {
       try {
-        const body = buildChartDataRequestBody({
-          viewId: chart.viewId,
-          vizId: chart.id,
-          vizType: "DATACHART",
-          pageSize,
-          config: chart.config,
-          view: chart.view,
-        });
+        const built = unit.unitType === "chart"
+          ? buildChartExecuteRequest({
+              viewId: unit.viewId,
+              vizId: unit.chartId,
+              vizName: unit.chartName,
+              vizType: "DATACHART",
+              pageSize,
+              config: unit.chartConfig,
+              view: unit.view,
+            })
+          : buildViewExecuteRequest({
+              viewId: unit.viewId,
+              viewName: unit.viewName,
+              pageSize,
+              view: unit.view,
+            });
+        if (!built.ok) {
+          skippedUnits.push({ unitId: unit.unitId, widgetId: unit.widgetId, reason: built.message });
+          continue;
+        }
         const df = await datartRequest<Dataframe>("/api/v1/data-provider/execute", context, {
           method: "POST",
-          body,
+          body: built.request,
         });
 
         results.push({
           success: true,
-          chartId: chart.id,
-          chartName: chart.name,
-          viewId: chart.viewId,
-          summary: summarizeDataframe(df ?? {}, chart.name || chart.id),
+          unitId: unit.unitId,
+          unitType: unit.unitType,
+          widgetId: unit.widgetId,
+          widgetName: unit.widgetName,
+          chartId: unit.chartId,
+          chartName: unit.chartName,
+          viewId: unit.viewId,
+          viewName: unit.viewName,
+          summary: summarizeDataframe(df ?? {}, unit.chartName || unit.viewName || unit.unitId),
         });
       } catch (error) {
         results.push({
           success: false,
-          chartId: chart.id,
-          chartName: chart.name,
-          viewId: chart.viewId,
+          unitId: unit.unitId,
+          unitType: unit.unitType,
+          widgetId: unit.widgetId,
+          widgetName: unit.widgetName,
+          chartId: unit.chartId,
+          chartName: unit.chartName,
+          viewId: unit.viewId,
+          viewName: unit.viewName,
           error: error instanceof Error ? error.message : String(error),
         });
       }
     }
 
     const successCount = results.filter((item) => item.success).length;
+    const failedCount = results.length - successCount;
+    if (successCount === 0) {
+      return formatError(
+        "EXECUTION_FAILED",
+        skippedUnits.length > 0
+          ? `看板组件未成功执行。已跳过 ${skippedUnits.length} 个组件：${skippedUnits.map((item) => item.reason).join("；")}`
+          : "看板组件执行失败，未获得任何成功结果",
+      );
+    }
     return formatSuccess({
       success: successCount > 0,
+      resolvedResource: {
+        id: resolved.resource.id,
+        name: resolved.resource.name,
+        folderId: resolved.resource.folderId,
+        matchedBy: resolved.matchedBy,
+      },
       dashboardId: detail.id,
       dashboardName: detail.name,
       chartCount: detail.datacharts?.length ?? 0,
+      plan: {
+        totalWidgets: detail.widgets?.length ?? 0,
+        executableUnits: plan.units.length,
+        skippedUnits,
+      },
       executedCount: results.length,
       successCount,
-      failedCount: results.length - successCount,
+      failedCount,
       results,
       message:
-        results.length < (detail.datacharts?.length ?? 0)
-          ? `已执行前 ${results.length} 个可执行图表，可通过 maxCharts 调整上限`
-          : "已按图表逐个执行看板查询",
+        units.length < plan.units.length
+          ? `已执行前 ${units.length} 个可执行组件，可通过 maxUnits 调整上限`
+          : "已按组件逐个执行看板查询",
     });
   });
+}
+
+export function resolveDashboardExecutableUnits(
+  detail: DashboardDetail,
+  options: { includeCharts?: boolean; includeViews?: boolean } = {},
+): { units: DashboardExecutableUnit[]; skippedUnits: SkippedUnit[] } {
+  const includeCharts = options.includeCharts !== false;
+  const includeViews = options.includeViews !== false;
+  const charts = new Map((detail.datacharts ?? []).map((chart) => [chart.id, chart]));
+  const views = new Map((detail.views ?? []).map((view) => [view.id, view]));
+  const units: DashboardExecutableUnit[] = [];
+  const skippedUnits: SkippedUnit[] = [];
+  const seen = new Set<string>();
+
+  for (const widget of detail.widgets ?? []) {
+    const chartId = widget.datachartId || widget.datachart_id;
+    if (includeCharts && chartId) {
+      const chart = charts.get(chartId);
+      if (!chart) {
+        skippedUnits.push({ unitId: `${widget.id}:${chartId}`, widgetId: widget.id, reason: `图表组件关联的 chartId 不存在：${chartId}` });
+      } else {
+        const config = parseRecord(chart.config);
+        const viewId = chart.viewId || chart.view_id || stringValue(config.viewId) || stringValue(config.view_id);
+        if (!viewId) {
+          skippedUnits.push({ unitId: `${widget.id}:${chartId}`, widgetId: widget.id, reason: `图表缺少关联 viewId：${chartId}` });
+        } else {
+          const key = `${widget.id}:chart:${chartId}:${viewId}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            units.push({
+              unitId: key,
+              unitType: "chart",
+              widgetId: widget.id,
+              widgetName: widget.name,
+              chartId: chart.id,
+              chartName: chart.name,
+              viewId,
+              viewName: views.get(viewId)?.name,
+              chartConfig: chart.config,
+              view: views.get(viewId),
+            });
+          }
+        }
+      }
+    }
+
+    if (includeViews) {
+      for (const viewId of widget.viewIds || widget.view_ids || []) {
+        const view = views.get(viewId);
+        if (!view) {
+          skippedUnits.push({ unitId: `${widget.id}:${viewId}`, widgetId: widget.id, reason: `视图组件关联的 viewId 不存在：${viewId}` });
+          continue;
+        }
+        const key = `${widget.id}:view:${viewId}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        units.push({
+          unitId: key,
+          unitType: "view",
+          widgetId: widget.id,
+          widgetName: widget.name,
+          viewId,
+          viewName: view.name,
+          view,
+        });
+      }
+    }
+  }
+
+  if (!detail.widgets?.length && includeCharts) {
+    for (const chart of resolveExecutableCharts(detail)) {
+      const key = `chart:${chart.id}:${chart.viewId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      units.push({
+        unitId: key,
+        unitType: "chart",
+        chartId: chart.id,
+        chartName: chart.name,
+        viewId: chart.viewId,
+        viewName: chart.view?.name,
+        chartConfig: chart.config,
+        view: chart.view,
+      });
+    }
+  }
+
+  return { units, skippedUnits };
 }
 
 export function resolveExecutableCharts(detail: DashboardDetail): Array<{
@@ -133,14 +312,17 @@ function stringValue(value: unknown): string | undefined {
 
 export const datartDashboardExecuteDef = {
   name: "dataeye_dashboard_execute",
-  description: "执行 DataEye 数据看板查询：先读取看板详情，再逐个执行看板中的高级图表并汇总结果",
+  description: "执行 DataEye 看板类资源查询：可传看板名称、完整 ID 或用户原始引用；工具会先解析真实 relId，再逐个执行其中的图表和视图组件。不要把 folderId 当作 dashboardId，也不要凭历史猜 ID",
   inputSchema: {
     type: "object",
     properties: {
-      dashboardId: { type: "string", description: "数据看板 ID，从 dataeye_dashboard_list 或 dataeye_dashboard_detail 获取" },
-      pageSize: { type: "number", description: "每个图表最多返回行数，默认 100", default: 100 },
-      maxCharts: { type: "number", description: "最多执行图表数量，默认 20，最大 50", default: 20 },
+      dashboardId: { type: "string", description: "真实看板 relId。若不确定，请改传 dashboardRef，不要传 folderId" },
+      dashboardName: { type: "string", description: "看板完整名称，可由工具解析为真实 relId" },
+      dashboardRef: { type: "string", description: "用户提供的看板名称、完整 ID 或短引用。工具会解析，不能唯一命中则返回候选" },
+      pageSize: { type: "number", description: "每个组件最多返回行数，默认 100", default: 100 },
+      maxUnits: { type: "number", description: "最多执行组件数量，默认 20，最大 50", default: 20 },
+      includeCharts: { type: "boolean", description: "是否执行图表组件，默认 true", default: true },
+      includeViews: { type: "boolean", description: "是否执行直接视图组件，默认 true", default: true },
     },
-    required: ["dashboardId"],
   },
 };

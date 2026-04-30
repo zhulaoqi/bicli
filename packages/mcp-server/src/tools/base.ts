@@ -19,6 +19,18 @@ export function formatError(code: string, message: string) {
   };
 }
 
+function normalizeToolError(message: string): { code: string; message: string } {
+  if (/resource\.dashboard\s+不存在|dashboard\s+不存在|ENTITY_NOT_FOUND|50024/.test(message)) {
+    return {
+      code: "NOT_FOUND",
+      message:
+        "看板资源不存在或当前用户无权访问。可能传入了 folderId、短 ID、已删除/归档资源，或当前组织/权限不匹配；请通过看板列表解析真实 relId 后重试。"
+        + ` 原始错误：${message}`,
+    };
+  }
+  return { code: "INTERNAL_ERROR", message };
+}
+
 export async function withAuth(
   db: Database,
   adapter: PermissionAdapter,
@@ -48,6 +60,7 @@ export async function withAuth(
     return await handler(db, cleanArgs, resolvedContext, adapter);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    return formatError("INTERNAL_ERROR", message);
+    const normalized = normalizeToolError(message);
+    return formatError(normalized.code, normalized.message);
   }
 }

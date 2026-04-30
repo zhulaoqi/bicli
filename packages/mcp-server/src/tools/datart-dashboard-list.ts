@@ -51,7 +51,7 @@ export async function datartDashboardList(db: Database, adapter: PermissionAdapt
 
 export const datartDashboardListDef = {
   name: "dataeye_dashboard_list",
-  description: "获取 DataEye 数据看板列表，用于回答有哪些看板、看板数据、看板结果等问题",
+  description: "获取 DataEye 可视化资源列表。返回的 id 是可执行 relId；folderId 只是目录节点 ID，严禁用于执行。执行真实数据优先把用户原始名称/引用传给 dataeye_dashboard_execute",
   inputSchema: {
     type: "object",
     properties: {

@@ -83,6 +83,12 @@ export function sanitizeEmptyAnalysisSpeculation(params: {
   ].join("\n");
 }
 
+export function sanitizeVisibleHistoryArtifacts(text: string): string {
+  return text
+    .replace(/\n?\s*…?\[回复已截断，共\s*\d+\s*字符。如需再次查看完整数据，请重新查询。]\s*/g, "")
+    .trim();
+}
+
 function hasEmptyAnalysisResult(toolCalls: ToolCallRecord[]): boolean {
   return toolCalls.some((call) => {
     if (call.name !== "dataeye_analysis_execute" || !call.result) return false;
@@ -418,7 +424,7 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
 
     let noToolGuardHandled = false;
 
-    if (recordedCalls.length === 0 && !hasFakeToolCall && !hasPageContextEvidence && shouldRequireToolCall(userMessage)) {
+    if (recordedCalls.length === 0 && !hasFakeToolCall && shouldRequireToolCall(userMessage)) {
       noToolGuardHandled = true;
       console.warn("[stream] required tool-call intent detected but no tools were called — starting repair round");
       sseSend(res, "text_replace", { content: "⏳ 这个问题需要查询系统实时数据，正在重新调用工具获取结果，请稍候…" });
@@ -533,6 +539,12 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
       sseSend(res, "text_delta", { content: fallback });
     }
 
+    const withoutHistoryArtifacts = sanitizeVisibleHistoryArtifacts(fullText);
+    if (withoutHistoryArtifacts !== fullText) {
+      sseSend(res, "text_replace", { content: withoutHistoryArtifacts });
+      fullText = withoutHistoryArtifacts;
+    }
+
     const guardedText = sanitizeEmptyAnalysisSpeculation({
       text: fullText,
       toolCalls: recordedCalls,
@@ -563,7 +575,7 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
     let contentForHistory = clean;
     if (recordedCalls.length > 0 && clean.length > MAX_HISTORY_CONTENT) {
       contentForHistory = clean.slice(0, MAX_HISTORY_CONTENT) +
-        `\n\n…[回复已截断，共 ${clean.length} 字符。如需再次查看完整数据，请重新查询。]`;
+        `\n\n<!--history_truncated chars=${clean.length} visible=false-->`;
     }
     // ─────────────────────────────────────────────────────────────────────────
     await store.addMessage(sessionId, {
