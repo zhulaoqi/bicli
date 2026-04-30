@@ -202,6 +202,7 @@ export async function datartDashboardExecute(db: Database, adapter: PermissionAd
       successCount,
       failedCount,
       results,
+      displayHint: "structured_blocks",
       __blocks__: [
         createSummaryBlock({
           title: "看板执行摘要",

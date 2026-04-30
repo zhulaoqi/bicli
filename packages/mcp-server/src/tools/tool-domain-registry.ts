@@ -75,6 +75,8 @@ import { datartShareList, datartShareListDef } from "./datart-share-list.js";
 import { datartDownloadSubmit, datartDownloadSubmitDef } from "./datart-download-submit.js";
 import { datartDownloadTaskList, datartDownloadTaskListDef } from "./datart-download-task-list.js";
 import { datartOrgList, datartOrgListDef } from "./datart-org-list.js";
+import { dataeyeKnowledgeSearch, dataeyeKnowledgeSearchSchema } from "./knowledge/knowledge-search.js";
+import { dataeyeConceptExplain, dataeyeConceptExplainSchema } from "./knowledge/concept-explain.js";
 
 export type ToolHandler = (
   db: Database,
@@ -221,8 +223,37 @@ export const visualizationDomain: ToolDomain = {
   ],
 };
 
+export const knowledgeDomain: ToolDomain = {
+  domain: "knowledge",
+  enabled: alwaysEnabled,
+  tools: [
+    {
+      domain: "knowledge",
+      tier: "atomic",
+      name: "dataeye_knowledge_search",
+      description: "在 BiCLI 知识库（skills 与 docs）中按关键词检索相关章节，返回带摘要的命中列表。仅在 knowledge / visual_explain 路由可见，不会查询实时业务数据。",
+      inputSchema: dataeyeKnowledgeSearchSchema as Record<string, unknown>,
+      requiredPermissions: [],
+      handler: dataeyeKnowledgeSearch,
+      knowledgeOnly: true,
+      routeHints: ["knowledge", "visual_explain"],
+    },
+    {
+      domain: "knowledge",
+      tier: "atomic",
+      name: "dataeye_concept_explain",
+      description: "解释 BiCLI/DataEye 领域内的高频术语（事件分析、漏斗、看板、定时任务等）。命中静态词典优先；未命中时回落到知识库检索。仅在 knowledge / visual_explain 路由可见。",
+      inputSchema: dataeyeConceptExplainSchema as Record<string, unknown>,
+      requiredPermissions: [],
+      handler: dataeyeConceptExplain,
+      knowledgeOnly: true,
+      routeHints: ["knowledge", "visual_explain"],
+    },
+  ],
+};
+
 export function getToolDomains(): ToolDomain[] {
-  return [coreDomain, dataeyeDomain, visualizationDomain];
+  return [coreDomain, dataeyeDomain, visualizationDomain, knowledgeDomain];
 }
 
 export function getEnabledTools(env: NodeJS.ProcessEnv = process.env): ToolDef[] {

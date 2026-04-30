@@ -16,6 +16,7 @@ const BUSINESS_SKILL_NAMES = new Set([
   "dataeye-table-management",
   "dataeye-dashboard",
   "dataeye-self-analysis",
+  "dataeye-knowledge",
 ]);
 
 function resolveSkillsDir(): string | null {
@@ -103,6 +104,7 @@ function businessSkillPriority(name: string): number {
     "dataeye-user-role-management",
     "dataeye-table-management",
     "dataeye-self-analysis",
+    "dataeye-knowledge",
   ];
   const index = priority.indexOf(name);
   return index === -1 ? priority.length : index;

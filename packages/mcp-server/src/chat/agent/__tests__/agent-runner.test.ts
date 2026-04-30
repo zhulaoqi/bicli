@@ -451,6 +451,92 @@ describe("runAgentLoop", () => {
     expect(state.finalText).toContain("2 个任务");
   });
 
+  it("emits agent_trace SSE before returning, with route/tool/verdict info", async () => {
+    const state = makeState();
+    state.allowedToolNames = ["dataeye_schedule_list"];
+
+    const toolSpecs: StreamToolSpec[] = [
+      { name: "dataeye_schedule_list", description: "", inputSchema: { type: "object" }, execute: async () => `{"success":true,"data":{"total":3}}` },
+    ];
+
+    const streamTextMock = vi.fn();
+    streamTextMock.mockImplementationOnce(() => ({
+      fullStream: (async function* () {
+        yield { type: "tool-call", toolCallId: "c1", toolName: "dataeye_schedule_list", input: {} };
+        yield { type: "tool-result", toolCallId: "c1", toolName: "dataeye_schedule_list", output: '{"success":true,"data":{"total":3}}' };
+      })(),
+    }));
+    streamTextMock.mockImplementationOnce(() => ({
+      fullStream: (async function* () {
+        yield { type: "text-delta", text: "共有 3 个任务" };
+      })(),
+    }));
+
+    const { res, events } = fakeRes();
+    const deps: AgentDeps = {
+      llm: {} as any,
+      systemPrompt: "sys",
+      res,
+      toolSpecs,
+      maxSteps: 3,
+      streamTextImpl: streamTextMock,
+      generateTextImpl: vi.fn(),
+    };
+
+    await runAgentLoop(state, deps);
+
+    const trace = events.find((e) => e.event === "agent_trace");
+    expect(trace).toBeDefined();
+    expect(trace?.data.route).toMatchObject({
+      route: "realtime_query",
+      domains: ["schedule"],
+    });
+    expect(trace?.data.allowedToolNames).toEqual(["dataeye_schedule_list"]);
+    expect(trace?.data.toolCallCount).toBe(1);
+    expect(trace?.data.finalizeRan).toBe(true);
+    expect(trace?.data.reflectVerdict).toBe("ok");
+    expect(trace?.data.repairCount).toBe(0);
+    expect(trace?.data.durations).toBeDefined();
+    expect(typeof trace?.data.durations.actMs).toBe("number");
+  });
+
+  it("respects AGENT_TRACE=off (no agent_trace emitted)", async () => {
+    const prev = process.env.AGENT_TRACE;
+    process.env.AGENT_TRACE = "off";
+    try {
+      const state = makeState();
+      state.allowedToolNames = ["dataeye_schedule_list"];
+      const toolSpecs: StreamToolSpec[] = [
+        { name: "dataeye_schedule_list", description: "", inputSchema: { type: "object" }, execute: async () => "{}" },
+      ];
+
+      const streamTextMock = vi.fn();
+      streamTextMock.mockImplementationOnce(() => ({ fullStream: (async function* () {})() }));
+      streamTextMock.mockImplementationOnce(() => ({
+        fullStream: (async function* () {
+          yield { type: "text-delta", text: "ok" };
+        })(),
+      }));
+
+      const { res, events } = fakeRes();
+      const deps: AgentDeps = {
+        llm: {} as any,
+        systemPrompt: "sys",
+        res,
+        toolSpecs,
+        maxSteps: 3,
+        streamTextImpl: streamTextMock,
+        generateTextImpl: vi.fn(),
+      };
+
+      await runAgentLoop(state, deps);
+      expect(events.find((e) => e.event === "agent_trace")).toBeUndefined();
+    } finally {
+      if (prev === undefined) delete process.env.AGENT_TRACE;
+      else process.env.AGENT_TRACE = prev;
+    }
+  });
+
   it("repair fails (no tools called) => verdict=fallback, finalText preserved", async () => {
     const state = makeState();
     state.allowedToolNames = ["dataeye_schedule_list"];

@@ -97,6 +97,7 @@ export async function datartDataExecute(db: Database, adapter: PermissionAdapter
     const summary = summarizeDataframe(df, title);
     return formatSuccess({
       ...summary,
+      displayHint: "structured_blocks",
       __blocks__: createBlocksFromProfile(profileDataframe(df), {
         title,
         sourceTool: "dataeye_data_execute",

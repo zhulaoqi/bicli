@@ -84,6 +84,7 @@ export async function dateyeAnalysisExecute(db: Database, adapter: PermissionAda
       description: detail.represent,
       query: summarizeExecutionBody(built.body),
       summary,
+      displayHint: blocks.length ? "structured_blocks" : "summary_only",
       // __chart__ 由 stream.ts 拦截后通过 SSE 单独发送给前端，不会出现在 LLM 上下文中
       ...(chartData ? { __chart__: chartData } : {}),
       ...(blocks.length ? { __blocks__: blocks } : {}),

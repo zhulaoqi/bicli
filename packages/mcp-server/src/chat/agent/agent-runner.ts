@@ -9,6 +9,7 @@ import { runFinalize } from "./finalizer.js";
 import { runReflect } from "./reflector.js";
 import { computeRenderHints } from "./render-hints.js";
 import { runCritique, shouldRunCritique } from "./critique.js";
+import { pickSubAgent, applySubAgent } from "./sub-agents/sub-agent.js";
 
 const ACT_PROMPT_SUFFIX = `
 
@@ -303,6 +304,15 @@ const DEFAULT_MAX_REPAIRS = 1;
  * Render 阶段 hint 由调用方在 finalize 后单独补；这里只完成"决定 finalText"的部分。
  */
 export async function runAgentLoop(state: AgentRunState, deps: AgentDeps): Promise<ReflectVerdict> {
+  const sub = pickSubAgent(state.route);
+  if (sub) {
+    const { systemPrompt } = applySubAgent(sub, state, deps.systemPrompt);
+    deps = { ...deps, systemPrompt };
+    console.log(
+      `[agent.loop] sub-agent=${sub.name} allowedTools=${state.allowedToolNames.length}`,
+    );
+  }
+
   await runAct(state, deps);
   await runFinalize(state, deps);
   let verdict = runReflect(state);
@@ -353,7 +363,55 @@ export async function runAgentLoop(state: AgentRunState, deps: AgentDeps): Promi
     emitSse(deps.res, "agent_render_hint", state.renderHints);
   }
 
+  if (process.env.AGENT_TRACE !== "off") {
+    try {
+      emitSse(deps.res, "agent_trace", buildTracePayload(state));
+    } catch (err) {
+      console.warn("[agent.loop] failed to emit agent_trace:", err instanceof Error ? err.message : String(err));
+    }
+  }
+
   return verdict;
+}
+
+/**
+ * 把 AgentRunState 摘要成前端调试面板可消费的轻量结构。
+ * 不包含敏感参数 / 完整工具结果，只暴露必要的诊断信息。
+ */
+export function buildTracePayload(state: AgentRunState) {
+  return {
+    route: {
+      route: state.route.route,
+      confidence: state.route.confidence,
+      domains: state.route.domains,
+      needsKnowledge: state.route.needsKnowledge,
+      needsUserConfirm: state.route.needsUserConfirm,
+      reasoning: state.route.reasoning,
+    },
+    allowedToolNames: state.allowedToolNames,
+    forbiddenToolNames: state.forbiddenToolNames,
+    toolCallCount: state.toolCalls.length,
+    toolCalls: state.toolCalls.map((c) => ({
+      id: c.id,
+      name: c.name,
+      status: c.status,
+      duration: c.duration,
+    })),
+    finalizeRan: state.telemetry.finalizeRan,
+    reflectVerdict: state.reflectVerdict.verdict,
+    reflectReasons: state.reflectVerdict.reasons,
+    repairCount: state.telemetry.repairCount,
+    critiqueCount: state.telemetry.critiqueCount,
+    routerSource: state.telemetry.routerSource,
+    durations: {
+      routerMs: state.telemetry.routerMs,
+      actMs: state.telemetry.actMs,
+      finalizeMs: state.telemetry.finalizeMs,
+      reflectMs: state.telemetry.reflectMs,
+      repairMs: state.telemetry.repairMs,
+    },
+    renderHints: state.renderHints,
+  };
 }
 
 /** 用于 Reflect / Finalize 阶段：把工具结果浓缩成短摘要供模型继续使用。 */

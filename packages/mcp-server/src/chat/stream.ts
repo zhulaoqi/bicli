@@ -13,8 +13,15 @@ import {
 import type { RouteName } from "./agent/agent-state.js";
 import { createInitialAgentRunState } from "./agent/agent-state.js";
 import { runRouter } from "./agent/intent-router.js";
+import { RouterCache } from "./agent/router-cache.js";
 import { selectToolsForRoute } from "./agent/tool-selector.js";
 import { runAgentLoop } from "./agent/agent-runner.js";
+import { reportTelemetry } from "./agent/telemetry.js";
+
+const routerCache = new RouterCache({
+  capacity: Number(process.env.AGENT_ROUTER_CACHE_CAPACITY) || 200,
+  ttlMs: Number(process.env.AGENT_ROUTER_CACHE_TTL_MS) || 5 * 60 * 1000,
+});
 
 export interface StreamToolSpec {
   name: string;
@@ -153,11 +160,21 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
   let errored = false;
 
   try {
-    state.route = await runRouter({
-      userMessage,
-      history,
-      pageContextEvidence: hasPageContextEvidence,
-    });
+    const routerStart = Date.now();
+    state.route = await runRouter(
+      {
+        userMessage,
+        history,
+        pageContextEvidence: hasPageContextEvidence,
+      },
+      { cache: routerCache, sessionId },
+    );
+    state.telemetry.routerMs = Date.now() - routerStart;
+    state.telemetry.routerSource = state.route.reasoning.startsWith("cache:")
+      ? "cache"
+      : state.route.reasoning.startsWith("model")
+        ? "rule+llm"
+        : "rule";
 
     const selection = selectToolsForRoute(tools, state.route);
     state.allowedToolNames = selection.allowed.map((t) => t.name);
@@ -166,6 +183,7 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
     console.log(
       `[stream] route=${state.route.route} confidence=${state.route.confidence} ` +
       `domains=${state.route.domains.join(",") || "-"} ` +
+      `source=${state.telemetry.routerSource} ` +
       `allowedTools=${state.allowedToolNames.length}/${tools.length}`,
     );
 
@@ -181,6 +199,29 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
     errored = true;
     console.error("[stream] runAgentLoop threw:", e);
     sseSend(res, "error", { message: e instanceof Error ? e.message : String(e) });
+  }
+
+  try {
+    await reportTelemetry({
+      sessionId,
+      success: !errored,
+      route: state.route.route,
+      routerSource: state.telemetry.routerSource,
+      domains: state.route.domains,
+      toolCallCount: state.toolCalls.length,
+      reflectVerdict: state.reflectVerdict.verdict,
+      repairCount: state.telemetry.repairCount,
+      critiqueCount: state.telemetry.critiqueCount,
+      durations: {
+        routerMs: state.telemetry.routerMs,
+        actMs: state.telemetry.actMs,
+        finalizeMs: state.telemetry.finalizeMs,
+        reflectMs: state.telemetry.reflectMs,
+        repairMs: state.telemetry.repairMs,
+      },
+    });
+  } catch (err) {
+    console.warn("[stream] telemetry report failed:", err instanceof Error ? err.message : String(err));
   }
 
   let fullText = state.finalText;

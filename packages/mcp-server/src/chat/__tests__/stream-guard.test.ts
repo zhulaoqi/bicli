@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildToolResultFallback,
   sanitizeEmptyAnalysisSpeculation,
   sanitizeVisibleHistoryArtifacts,
   shouldRequireToolCall,
@@ -73,11 +74,62 @@ describe("shouldRequireToolCall", () => {
     expect(shouldRequireToolCall("怎么配置留存分析")).toBe(false);
     expect(shouldRequireToolCall("解释一下数据表管理的字段类型")).toBe(false);
     expect(shouldRequireToolCall("为什么需要设置转化窗口，讲下概念")).toBe(false);
+    expect(shouldRequireToolCall("帮我看下接入 SDK 的流程")).toBe(false);
+    expect(shouldRequireToolCall("定时任务启动和立即执行的区别你知道吗")).toBe(false);
+    expect(shouldRequireToolCall("这里最佳实践到底是什么")).toBe(false);
   });
 
   it("requires tools when a help-like question points to concrete current data", () => {
     expect(shouldRequireToolCall("为什么 2661 这个事件分析没有数据")).toBe(true);
     expect(shouldRequireToolCall("帮我看看当前页面数据为什么为空")).toBe(true);
+  });
+});
+
+describe("buildToolResultFallback", () => {
+  it("summarizes successful schedule detail when the model returns no text", () => {
+    const fallback = buildToolResultFallback([
+      {
+        id: "call_1",
+        name: "dataeye_schedule_detail",
+        args: { scheduleId: "schedule_1" },
+        status: "done",
+        result: JSON.stringify({
+          success: true,
+          data: {
+            schedule: {
+              id: "schedule_1",
+              name: "正常散点图",
+              active: false,
+              type: "EMAIL",
+              cronExpression: "0 */10 * * * ?",
+            },
+          },
+        }),
+      },
+    ]);
+
+    expect(fallback).toContain("已调用工具：dataeye_schedule_detail");
+    expect(fallback).toContain("正常散点图");
+    expect(fallback).toContain("未启动");
+    expect(fallback).not.toContain("模型没有生成最终文字总结");
+  });
+
+  it("surfaces permission errors instead of showing an empty-response warning", () => {
+    const fallback = buildToolResultFallback([
+      {
+        id: "call_1",
+        name: "data_query",
+        args: {},
+        status: "error",
+        result: JSON.stringify({
+          success: false,
+          error: { code: "PERMISSION_DENIED", message: "需要权限: data:read" },
+        }),
+      },
+    ]);
+
+    expect(fallback).toContain("工具返回了错误");
+    expect(fallback).toContain("需要权限: data:read");
   });
 });
 

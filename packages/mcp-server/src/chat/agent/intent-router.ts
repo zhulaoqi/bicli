@@ -1,4 +1,5 @@
 import type { RouteDecision, RouteName } from "./agent-state.js";
+import { RouterCache } from "./router-cache.js";
 
 export interface RouteInput {
   userMessage: string;
@@ -239,6 +240,10 @@ export interface RunRouterOptions {
   allowOverride?: boolean;
   /** LLM 超时，默认 2000ms 或读取 AGENT_ROUTER_TIMEOUT_MS */
   timeoutMs?: number;
+  /** 可选路由缓存，命中后直接返回，不再调用规则/LLM */
+  cache?: RouterCache;
+  /** 与 cache 配合用于生成 key；通常是会话 id */
+  sessionId?: number | string;
 }
 
 const DEFAULT_TIMEOUT_MS = 2000;
@@ -248,14 +253,37 @@ export async function runRouter(
   input: RouteInput,
   options: RunRouterOptions = {},
 ): Promise<RouteDecision> {
+  const cacheKey =
+    options.cache && options.sessionId !== undefined
+      ? RouterCache.makeKey({ sessionId: options.sessionId, userMessage: input.userMessage })
+      : null;
+  if (options.cache && cacheKey) {
+    const hit = options.cache.get(cacheKey);
+    if (hit) {
+      return {
+        ...hit,
+        reasoning: hit.reasoning.startsWith("cache:")
+          ? hit.reasoning
+          : `cache: ${hit.reasoning}`,
+      };
+    }
+  }
+
   const ruleDecision = routeUserMessage(input);
 
-  if (process.env.AGENT_ROUTER_DISABLE_LLM === "1") return ruleDecision;
-  if (!options.llm) return ruleDecision;
+  const finalize = (decision: RouteDecision): RouteDecision => {
+    if (options.cache && cacheKey) {
+      options.cache.set(cacheKey, decision);
+    }
+    return decision;
+  };
+
+  if (process.env.AGENT_ROUTER_DISABLE_LLM === "1") return finalize(ruleDecision);
+  if (!options.llm) return finalize(ruleDecision);
   // 必须 allowOverride=true 且规则置信度低才调用 LLM。
   // 高置信度场景（即使 allowOverride=true）不浪费一次模型调用。
-  if (!options.allowOverride) return ruleDecision;
-  if (ruleDecision.confidence >= LOW_CONFIDENCE_THRESHOLD) return ruleDecision;
+  if (!options.allowOverride) return finalize(ruleDecision);
+  if (ruleDecision.confidence >= LOW_CONFIDENCE_THRESHOLD) return finalize(ruleDecision);
 
   const timeoutMs = options.timeoutMs ?? (Number(process.env.AGENT_ROUTER_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS);
   const prompt = buildLLMPrompt(input, ruleDecision);
@@ -264,12 +292,12 @@ export async function runRouter(
     const raw = await runWithTimeout(options.llm(prompt), timeoutMs);
     const overridden = parseLLMOverride(raw, ruleDecision);
     if (overridden) {
-      return overridden;
+      return finalize(overridden);
     }
-    return ruleDecision;
+    return finalize(ruleDecision);
   } catch (err) {
     console.warn("[intent-router] LLM override failed, falling back to rule decision:", err);
-    return ruleDecision;
+    return finalize(ruleDecision);
   }
 }
 

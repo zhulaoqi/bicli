@@ -50,6 +50,7 @@ describe("tool domain registry", () => {
       "core",
       "dataeye",
       "visualization",
+      "knowledge",
     ]);
   });
 
@@ -122,10 +123,18 @@ describe("tool domain registry", () => {
       expect(scheduleDelete?.routeHints).toEqual(["write_action"]);
     });
 
-    it("does not declare any knowledgeOnly tool yet (knowledge tools are added in P1)", () => {
+    it("registers knowledge tools as knowledgeOnly with knowledge/visual_explain hints", () => {
       const tools = getEnabledTools(env);
       const knowledgeTools = tools.filter((t) => t.knowledgeOnly === true);
-      expect(knowledgeTools).toEqual([]);
+      expect(knowledgeTools.map((t) => t.name).sort()).toEqual([
+        "dataeye_concept_explain",
+        "dataeye_knowledge_search",
+      ]);
+      for (const t of knowledgeTools) {
+        expect(t.routeHints).toEqual(
+          expect.arrayContaining(["knowledge", "visual_explain"]),
+        );
+      }
     });
   });
 });
