@@ -56,6 +56,19 @@ describe("intent-router (rule layer)", () => {
       expect(decision.route).toBe("write_action");
       expect(decision.needsUserConfirm).toBe(true);
     });
+
+    it("treats short confirmation as write_action when user history indicates user-role assignment", () => {
+      const decision = routeUserMessage(baseInput({
+        userMessage: "确认执行",
+        history: [
+          { role: "user", content: "帮我给用户张三分配测试角色0120" },
+          { role: "assistant", content: "我将先创建一个定时任务给你预览（错误示例）" },
+        ],
+      }));
+      expect(decision.route).toBe("write_action");
+      expect(decision.domains).toEqual(expect.arrayContaining(["user", "role"]));
+      expect(decision.domains).not.toContain("schedule");
+    });
   });
 
   describe("diagnosis route", () => {

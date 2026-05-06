@@ -112,6 +112,7 @@ describe("runRouter cache integration", () => {
       {
         userMessage,
         history: [
+          { role: "user", content: "请帮我创建定时任务并发送测试邮箱" },
           { role: "assistant", content: "将创建定时任务，请确认执行" },
         ],
         pageContextEvidence: false,
@@ -122,6 +123,7 @@ describe("runRouter cache integration", () => {
       {
         userMessage,
         history: [
+          { role: "user", content: "请给用户张三分配测试角色0120" },
           { role: "assistant", content: "将创建用户并绑定角色，请确认执行" },
         ],
         pageContextEvidence: false,

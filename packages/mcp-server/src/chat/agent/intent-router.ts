@@ -131,6 +131,27 @@ export function routeUserMessage(input: RouteInput): RouteDecision {
     };
   }
 
+  const userHistoryText = input.history
+    .filter((m) => m.role === "user")
+    .map((m) => m.content)
+    .join("\n");
+  // “确认执行/继续/是”属于上下文续写语义，本身信息量极低；
+  // 必须从用户历史中继承“写操作 + 业务域”，避免被污染的 assistant 文本带偏。
+  if (isShortConfirmationMessage(text)) {
+    const historyWriteHits = countMatches(userHistoryText, writeMarkers);
+    const historyDomains = detectDomains(userHistoryText);
+    if (historyWriteHits > 0 || historyDomains.length > 0) {
+      return {
+        route: "write_action",
+        confidence: 0.85,
+        domains: historyDomains,
+        needsKnowledge: false,
+        needsUserConfirm: true,
+        reasoning: `rule: short_confirm_with_history_write domains=${historyDomains.join(",") || "-"}`,
+      };
+    }
+  }
+
   const score: MatchScore = {
     knowledge: 0,
     realtime_query: 0,
@@ -151,7 +172,8 @@ export function routeUserMessage(input: RouteInput): RouteDecision {
   score.realtime_query += countMatches(text, concreteDataMarkers);
 
   // 历史消息中出现 ID 或资源名 → 视为存在实时查询线索
-  const historyText = input.history.map((m) => m.content).join("\n");
+  // 历史证据只看 user 消息，避免 assistant 幻觉文本污染下一轮路由。
+  const historyText = userHistoryText;
   const hasContextRef = detectIdLikeReference(historyText);
   if (hasContextRef) score.realtime_query += 1;
 
@@ -377,3 +399,4 @@ function buildLLMPrompt(input: RouteInput, ruleDecision: RouteDecision): string 
     "只返回 JSON，不要解释。",
   ].join("\n");
 }
+
