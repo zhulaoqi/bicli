@@ -29,6 +29,7 @@ const fakeRegistry: ToolDef[] = [
 
   // user
   { domain: "dataeye", tier: "business", name: "dataeye_user_onboard", description: "", requiredPermissions: [], handler, routeHints: ["realtime_query", "write_action"] },
+  { domain: "dataeye", tier: "atomic", name: "dataeye_role_create", description: "", requiredPermissions: [], handler, routeHints: ["realtime_query", "write_action"] },
   { domain: "dataeye", tier: "atomic", name: "dataeye_user_create", description: "", requiredPermissions: [], handler, routeHints: ["realtime_query", "write_action"] },
   { domain: "dataeye", tier: "atomic", name: "dataeye_user_list", description: "", requiredPermissions: [], handler, routeHints: ["realtime_query", "diagnosis"] },
 
@@ -105,6 +106,27 @@ describe("selectToolsForRoute", () => {
       const allowedNames = result.allowed.map((t) => t.name);
       expect(allowedNames).toContain("dataeye_user_onboard");
       expect(allowedNames).not.toContain("dataeye_user_create");
+    });
+
+    it("suppresses role_create when user only asks to create user", () => {
+      const result = selectToolsForRoute(
+        fakeRegistry,
+        baseDecision({ route: "write_action", domains: ["user", "role"], needsUserConfirm: true }),
+        { userMessage: "帮我创建一个用户并分配已有角色" },
+      );
+      const allowedNames = result.allowed.map((t) => t.name);
+      expect(allowedNames).toContain("dataeye_user_onboard");
+      expect(allowedNames).not.toContain("dataeye_role_create");
+    });
+
+    it("allows role_create when user explicitly asks to create role", () => {
+      const result = selectToolsForRoute(
+        fakeRegistry,
+        baseDecision({ route: "write_action", domains: ["role"], needsUserConfirm: true }),
+        { userMessage: "请创建一个角色叫测试角色A" },
+      );
+      const allowedNames = result.allowed.map((t) => t.name);
+      expect(allowedNames).toContain("dataeye_role_create");
     });
   });
 

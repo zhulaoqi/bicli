@@ -176,7 +176,9 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
         ? "rule+llm"
         : "rule";
 
-    const selection = selectToolsForRoute(tools, state.route);
+    const selection = selectToolsForRoute(tools, state.route, {
+      userMessage,
+    });
     state.allowedToolNames = selection.allowed.map((t) => t.name);
     state.forbiddenToolNames = selection.forbidden;
 

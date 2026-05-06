@@ -81,6 +81,7 @@ function matchesAnyDomain(tool: ToolRouteFacet, domains: string[]): boolean {
 export function selectToolsForRoute<T extends ToolRouteFacet>(
   registry: T[],
   decision: RouteDecision,
+  options: { userMessage?: string } = {},
 ): ToolSelection<T> {
   const allowed: T[] = [];
   const forbidden: string[] = [];
@@ -113,6 +114,11 @@ export function selectToolsForRoute<T extends ToolRouteFacet>(
 
     // 4. write_action 路由：屏蔽被 business 工具覆盖的 atomic 写工具
     if (route === "write_action") {
+      // 用户未明确要求“创建角色”时，禁止模型主动调用 role_create，避免误操作。
+      if (shouldSuppressRoleCreate(tool, options.userMessage)) {
+        forbidden.push(tool.name);
+        continue;
+      }
       const shadowed = isShadowedAtomicForBusiness(tool, registry);
       if (shadowed) {
         forbidden.push(tool.name);
@@ -154,4 +160,16 @@ function isShadowedAtomicForBusiness(tool: ToolRouteFacet, registry: ToolRouteFa
     if (businessExists) return true;
   }
   return false;
+}
+
+function shouldSuppressRoleCreate(
+  tool: ToolRouteFacet,
+  userMessage: string | undefined,
+): boolean {
+  if (tool.name !== "dataeye_role_create") return false;
+  if (!userMessage) return false;
+  const text = userMessage.toLowerCase();
+  const explicitRoleCreate = /(创建|新增|新建|建立).{0,6}(角色)/.test(text) ||
+    /(role).{0,4}(create|new)/i.test(text);
+  return !explicitRoleCreate;
 }
