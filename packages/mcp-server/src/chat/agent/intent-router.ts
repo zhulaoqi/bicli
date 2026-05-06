@@ -253,11 +253,17 @@ export async function runRouter(
   input: RouteInput,
   options: RunRouterOptions = {},
 ): Promise<RouteDecision> {
+  const cacheEnabled = !isShortConfirmationMessage(input.userMessage);
+  const contextFingerprint = buildContextFingerprint(input);
   const cacheKey =
-    options.cache && options.sessionId !== undefined
-      ? RouterCache.makeKey({ sessionId: options.sessionId, userMessage: input.userMessage })
+    cacheEnabled && options.cache && options.sessionId !== undefined
+      ? RouterCache.makeKey({
+        sessionId: options.sessionId,
+        userMessage: input.userMessage,
+        contextFingerprint,
+      })
       : null;
-  if (options.cache && cacheKey) {
+  if (cacheEnabled && options.cache && cacheKey) {
     const hit = options.cache.get(cacheKey);
     if (hit) {
       return {
@@ -272,7 +278,7 @@ export async function runRouter(
   const ruleDecision = routeUserMessage(input);
 
   const finalize = (decision: RouteDecision): RouteDecision => {
-    if (options.cache && cacheKey) {
+    if (cacheEnabled && options.cache && cacheKey) {
       options.cache.set(cacheKey, decision);
     }
     return decision;
@@ -299,6 +305,30 @@ export async function runRouter(
     console.warn("[intent-router] LLM override failed, falling back to rule decision:", err);
     return finalize(ruleDecision);
   }
+}
+
+function buildContextFingerprint(input: RouteInput): string {
+  const tail = input.history.slice(-4);
+  const historyDigest = tail
+    .map((m) => `${m.role}:${compactText(m.content).slice(0, 160)}`)
+    .join("||");
+  return `page=${input.pageContextEvidence ? 1 : 0}|h=${historyDigest}`;
+}
+
+function compactText(s: string): string {
+  return String(s ?? "").replace(/\s+/g, " ").trim();
+}
+
+function isShortConfirmationMessage(message: string): boolean {
+  const text = compactText(message).toLowerCase();
+  if (!text) return false;
+  const confirmPatterns = [
+    /^(确认执行|确认|执行|继续|是|好的|ok|okay|yes|yep|go)$/i,
+    /^请执行$/i,
+    /^可以执行$/i,
+    /^继续执行$/i,
+  ];
+  return text.length <= 8 && confirmPatterns.some((p) => p.test(text));
 }
 
 function runWithTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {

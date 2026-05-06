@@ -32,12 +32,30 @@ describe("RouterCache", () => {
     expect(c.get("c")).toEqual({ v: "c" });
   });
 
-  it("computes deterministic key for same sessionId+userMessage", () => {
-    const k1 = RouterCache.makeKey({ sessionId: 1, userMessage: "查询定时任务列表" });
-    const k2 = RouterCache.makeKey({ sessionId: 1, userMessage: "查询定时任务列表" });
-    const k3 = RouterCache.makeKey({ sessionId: 2, userMessage: "查询定时任务列表" });
+  it("computes deterministic key for same sessionId+userMessage+context", () => {
+    const k1 = RouterCache.makeKey({
+      sessionId: 1,
+      userMessage: "查询定时任务列表",
+      contextFingerprint: "h=assistant:xxx",
+    });
+    const k2 = RouterCache.makeKey({
+      sessionId: 1,
+      userMessage: "查询定时任务列表",
+      contextFingerprint: "h=assistant:xxx",
+    });
+    const k3 = RouterCache.makeKey({
+      sessionId: 2,
+      userMessage: "查询定时任务列表",
+      contextFingerprint: "h=assistant:xxx",
+    });
+    const k4 = RouterCache.makeKey({
+      sessionId: 1,
+      userMessage: "查询定时任务列表",
+      contextFingerprint: "h=assistant:yyy",
+    });
     expect(k1).toBe(k2);
     expect(k1).not.toBe(k3);
+    expect(k1).not.toBe(k4);
   });
 });
 
@@ -83,5 +101,38 @@ describe("runRouter cache integration", () => {
     expect(a.reasoning.startsWith("cache:")).toBe(false);
     expect(b.reasoning.startsWith("cache:")).toBe(false);
     expect(llm).not.toHaveBeenCalled();
+  });
+
+  it("same confirmation phrase in one session but different history should not reuse wrong cached domain", async () => {
+    const cache = new RouterCache({ capacity: 10, ttlMs: 60_000 });
+    const sessionId = 7;
+    const userMessage = "确认执行";
+
+    const first = await runRouter(
+      {
+        userMessage,
+        history: [
+          { role: "assistant", content: "将创建定时任务，请确认执行" },
+        ],
+        pageContextEvidence: false,
+      },
+      { cache, sessionId },
+    );
+    const second = await runRouter(
+      {
+        userMessage,
+        history: [
+          { role: "assistant", content: "将创建用户并绑定角色，请确认执行" },
+        ],
+        pageContextEvidence: false,
+      },
+      { cache, sessionId },
+    );
+
+    expect(first.domains).toContain("schedule");
+    expect(second.domains).toContain("user");
+    // 短确认语默认禁用缓存，避免误命中旧上下文
+    expect(first.reasoning.startsWith("cache:")).toBe(false);
+    expect(second.reasoning.startsWith("cache:")).toBe(false);
   });
 });

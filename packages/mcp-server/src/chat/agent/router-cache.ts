@@ -9,6 +9,7 @@ export interface RouterCacheOptions {
 export interface RouterCacheKeyInput {
   sessionId: number | string;
   userMessage: string;
+  contextFingerprint?: string;
 }
 
 interface CacheEntry {
@@ -37,6 +38,8 @@ export class RouterCache {
     hash.update(String(input.sessionId));
     hash.update("|");
     hash.update(input.userMessage.trim());
+    hash.update("|");
+    hash.update((input.contextFingerprint ?? "").trim());
     return hash.digest("hex");
   }
 
