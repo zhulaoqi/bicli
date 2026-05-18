@@ -1,6 +1,8 @@
 import type { ToolContext } from "../types/index.js";
 
-const DATART_API_URL = () => process.env.DATART_API_URL || "";
+/** 未单独配置时回退到 DataEye 网关（与 .env.envtest 及多数部署一致） */
+const DATART_API_URL = () =>
+  process.env.DATART_API_URL || process.env.DATAEYE_API_URL || "";
 const DATART_API_TIMEOUT = () => parseInt(process.env.DATART_API_TIMEOUT || "15000", 10);
 const DATART_MAX_RETRIES = () => parseInt(process.env.DATART_MAX_RETRIES || "3", 10);
 

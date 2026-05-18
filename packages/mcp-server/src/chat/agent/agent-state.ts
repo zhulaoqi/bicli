@@ -77,6 +77,8 @@ export interface AgentRunState {
   allowedToolNames: string[];
   /** Selector 阶段被屏蔽的工具名（仅做 trace 记录） */
   forbiddenToolNames: string[];
+  /** Skill 声明的优先工具（子 Agent 裁剪后仍尽量保留） */
+  preferredToolNames: string[];
   /** 工具循环过程中的 messages（包含 system / user / assistant / tool 等） */
   messages: Array<{ role: string; content: any }>;
   /** Act 阶段记录的工具调用 */
@@ -139,6 +141,7 @@ export function createInitialAgentRunState(input: CreateAgentRunStateInput): Age
     route: { ...defaultRoute },
     allowedToolNames: [],
     forbiddenToolNames: [],
+    preferredToolNames: [],
     messages: [],
     toolCalls: [],
     collectedBlocks: [],

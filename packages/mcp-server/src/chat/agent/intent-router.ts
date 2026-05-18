@@ -77,6 +77,9 @@ const readOnlyListMarkers = [
   /列出.{0,16}角色/,
   /(可以|能).{0,8}分配.{0,12}角色|角色.{0,12}(可以|能)分配/,
   /有哪些.{0,12}可以分配/,
+  /有哪些.{0,16}视图/,
+  /视图.{0,16}(有哪些|列表|清单)/,
+  /列出.{0,16}视图/,
 ];
 
 /** 业务领域关键词（与 selector domain 对齐） */
@@ -89,8 +92,9 @@ const DOMAIN_KEYWORDS: Record<string, RegExp[]> = {
   table: [/数据表|表结构|table|schema|字段/i],
   project: [/项目|product|应用/i, /我的产品/],
   user: [/用户|账号|账户/, /\buser\b/i],
-  role: [/角色|权限/, /\brole\b/i],
-  view: [/数据视图|\bview\b/i],
+  // 勿用裸「权限」——「我有权限的项目」会误命中 role 域，导致裁掉 project_list
+  role: [/角色|\brole\b/i, /角色权限|RBAC/i],
+  view: [/数据视图|视图|\bview\b/i],
   knowledge: [],
 };
 

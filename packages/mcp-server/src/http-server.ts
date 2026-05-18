@@ -555,6 +555,7 @@ async function main() {
       skipNoToolListGuard: (routed.skill?.name.startsWith("dataeye-help-") ?? false) || hasPageContextEvidence(sanitizedPageContext.context),
       hasPageContextEvidence: hasPageContextEvidence(sanitizedPageContext.context),
       customConfig,
+      preferredToolNames: (routed.skill?.requiredTools ?? []).filter(Boolean),
     });
   } catch (e: any) {
     console.error("[/chat/stream] unhandled error:", e);

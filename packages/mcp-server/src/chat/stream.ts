@@ -56,6 +56,8 @@ export interface StreamChatParams {
   hasPageContextEvidence?: boolean;
   maxSteps?: number;
   customConfig?: CustomModelConfig;
+  /** Skill 声明的优先工具名，selector 后强制并入 allowed 列表 */
+  preferredToolNames?: string[];
 }
 
 /**
@@ -130,6 +132,7 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
     hasPageContextEvidence = false,
     maxSteps = 8,
     customConfig,
+    preferredToolNames = [],
   } = params;
 
   res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
@@ -179,7 +182,14 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
     const selection = selectToolsForRoute(tools, state.route, {
       userMessage,
     });
-    state.allowedToolNames = selection.allowed.map((t) => t.name);
+    const allowedSet = new Set(selection.allowed.map((t) => t.name));
+    for (const name of preferredToolNames) {
+      if (tools.some((t) => t.name === name)) {
+        allowedSet.add(name);
+      }
+    }
+    state.allowedToolNames = [...allowedSet];
+    state.preferredToolNames = preferredToolNames.filter((n) => allowedSet.has(n));
     state.forbiddenToolNames = selection.forbidden;
 
     console.log(

@@ -10,14 +10,28 @@ import { runReflect } from "./reflector.js";
 import { computeRenderHints } from "./render-hints.js";
 import { runCritique, shouldRunCritique } from "./critique.js";
 import { pickSubAgent, applySubAgent } from "./sub-agents/sub-agent.js";
+import {
+  emitBlockedToolResult,
+  finalizeOrphanedToolCalls,
+  withToolExecuteTimeout,
+} from "./tool-guard.js";
 
-const ACT_PROMPT_SUFFIX = `
+function buildActPromptSuffix(allowedToolNames: string[]): string {
+  const list =
+    allowedToolNames.length > 0 && allowedToolNames.length <= 40
+      ? allowedToolNames.join(", ")
+      : allowedToolNames.length > 40
+        ? `${allowedToolNames.slice(0, 40).join(", ")} …共${allowedToolNames.length}个`
+        : "（无）";
+  return `
 
 【Act 阶段提示】
 1. 只负责调用工具收集事实，不要在本轮输出最终自然语言回答。
 2. 工具执行完成后，系统会在下一阶段（Finalize）让你基于工具结果生成回复。
 3. 如果当前问题已经可以直接回答（例如概念解释），可以保持不调用工具；但**不要**复读历史数据或推断未验证的根因。
+4. **仅可调用以下已开放工具**（其它名称不会执行）：${list}
 `;
+}
 
 const DEFAULT_MAX_TOOL_RESULT = 6000;
 
@@ -37,6 +51,7 @@ const DEFAULT_MAX_TOOL_RESULT = 6000;
 export async function runAct(state: AgentRunState, deps: AgentDeps): Promise<void> {
   const start = Date.now();
   const allowedSpecs = deps.toolSpecs.filter((t) => state.allowedToolNames.includes(t.name));
+  const allowedSet = new Set(state.allowedToolNames);
 
   const aiTools: Record<string, Tool<any, any>> = {};
   for (const t of allowedSpecs) {
@@ -63,9 +78,11 @@ export async function runAct(state: AgentRunState, deps: AgentDeps): Promise<voi
   const streamTextFn = deps.streamTextImpl ?? (await import("ai")).streamText;
   const toolStartTimes: Record<string, number> = {};
 
+  const actSuffix = buildActPromptSuffix(state.allowedToolNames);
+
   const result = streamTextFn({
     model: deps.llm,
-    system: deps.systemPrompt + ACT_PROMPT_SUFFIX,
+    system: deps.systemPrompt + actSuffix,
     messages: messages as any,
     tools: aiTools,
     toolChoice: "auto",
@@ -79,51 +96,66 @@ export async function runAct(state: AgentRunState, deps: AgentDeps): Promise<voi
     },
   });
 
-  for await (const part of result.fullStream) {
-    switch (part.type) {
-      case "text-delta":
-        state.actText += part.text;
-        break;
-      case "tool-call": {
-        toolStartTimes[part.toolCallId] = Date.now();
-        state.toolCalls.push({
-          id: part.toolCallId,
-          name: part.toolName,
-          args: part.input,
-          status: "running",
-        });
-        emitSse(deps.res, "tool_start", {
-          id: part.toolCallId,
-          name: part.toolName,
-          args: part.input,
-        });
-        break;
-      }
-      case "tool-result": {
-        const duration = Date.now() - (toolStartTimes[part.toolCallId] || Date.now());
-        const rec = state.toolCalls.find((r) => r.id === part.toolCallId);
-        let toolSuccess = true;
-        try {
-          const parsed = typeof part.output === "string" ? JSON.parse(part.output) : part.output;
-          toolSuccess = parsed?.success !== false;
-        } catch { /* ignore parse error */ }
-        if (rec) {
-          rec.result = part.output;
-          rec.duration = duration;
-          rec.status = toolSuccess ? "done" : "error";
+  try {
+    for await (const part of result.fullStream) {
+      switch (part.type) {
+        case "text-delta":
+          state.actText += part.text;
+          break;
+        case "tool-call": {
+          toolStartTimes[part.toolCallId] = Date.now();
+          const rec: ToolCallRecord = {
+            id: part.toolCallId,
+            name: part.toolName,
+            args: part.input,
+            status: "running",
+          };
+          state.toolCalls.push(rec);
+          emitSse(deps.res, "tool_start", {
+            id: part.toolCallId,
+            name: part.toolName,
+            args: part.input,
+          });
+          if (!allowedSet.has(part.toolName)) {
+            const duration = Date.now() - (toolStartTimes[part.toolCallId] || Date.now());
+            emitBlockedToolResult(deps.res, part.toolCallId, part.toolName, rec, duration);
+          }
+          break;
         }
-        emitSse(deps.res, "tool_result", {
-          id: part.toolCallId,
-          name: part.toolName,
-          result: part.output,
-          duration,
-          status: toolSuccess ? "done" : "error",
-        });
-        break;
+        case "tool-result": {
+          const duration = Date.now() - (toolStartTimes[part.toolCallId] || Date.now());
+          const rec = state.toolCalls.find((r) => r.id === part.toolCallId);
+          if (rec?.status === "error" && rec.result?.includes("TOOL_NOT_ALLOWED")) {
+            break;
+          }
+          let toolSuccess = true;
+          try {
+            const parsed = typeof part.output === "string" ? JSON.parse(part.output) : part.output;
+            toolSuccess = parsed?.success !== false;
+          } catch { /* ignore parse error */ }
+          if (rec) {
+            rec.result = part.output;
+            rec.duration = duration;
+            rec.status = toolSuccess ? "done" : "error";
+          }
+          emitSse(deps.res, "tool_result", {
+            id: part.toolCallId,
+            name: part.toolName,
+            result: part.output,
+            duration,
+            status: toolSuccess ? "done" : "error",
+          });
+          break;
+        }
+        case "error":
+          emitSse(deps.res, "error", { message: String(part.error) });
+          break;
       }
-      case "error":
-        emitSse(deps.res, "error", { message: String(part.error) });
-        break;
+    }
+  } finally {
+    const orphans = finalizeOrphanedToolCalls(state.toolCalls, deps.res);
+    if (orphans > 0) {
+      console.warn(`[agent.act] finalized ${orphans} orphaned tool call(s)`);
     }
   }
 
@@ -137,7 +169,10 @@ async function executeToolSpec(
   deps: AgentDeps,
 ): Promise<string> {
   try {
-    const raw = await spec.execute(args ?? {});
+    const raw = await withToolExecuteTimeout(
+      spec.execute(args ?? {}),
+      spec.name,
+    );
     let resultForLLM = raw;
     if (typeof raw === "string") {
       const { blocks, chart, resultForLLM: withoutArtifacts } = extractStructuredToolArtifacts(raw);
@@ -290,6 +325,11 @@ export async function runActRepair(
   } catch (err) {
     console.warn("[agent.repair] threw:", err instanceof Error ? err.message : String(err));
     outcome = null;
+  } finally {
+    const orphans = finalizeOrphanedToolCalls(state.toolCalls, deps.res);
+    if (orphans > 0) {
+      console.warn(`[agent.repair] finalized ${orphans} orphaned tool call(s)`);
+    }
   }
 
   state.telemetry.repairCount += 1;

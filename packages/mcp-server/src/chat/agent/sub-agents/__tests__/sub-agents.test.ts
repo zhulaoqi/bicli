@@ -28,7 +28,11 @@ describe("pickSubAgent", () => {
     expect(pickSubAgent(decision({ domains: ["event"] }))?.name).toBe("analysis");
   });
 
-  it("returns user runner when domain includes user or role", () => {
+  it("prefers analysis over user when project/chart coexists with role (DAU 全项目场景)", () => {
+    expect(pickSubAgent(decision({ domains: ["project", "chart", "role"] }))?.name).toBe("analysis");
+  });
+
+  it("returns user runner when domain includes user or role only", () => {
     expect(pickSubAgent(decision({ domains: ["user"] }))?.name).toBe("user");
     expect(pickSubAgent(decision({ domains: ["role"] }))?.name).toBe("user");
   });
@@ -82,6 +86,25 @@ describe("applySubAgent", () => {
       "dataeye_event_analysis",
       "dataeye_event_list",
     ]);
+  });
+
+  it("user sub-agent restores project_list when domains include project", () => {
+    const state = createInitialAgentRunState({
+      sessionId: 1,
+      userMessage: "我有权限的所有项目",
+      history: [],
+    });
+    state.route = decision({ domains: ["project", "role"] });
+    state.allowedToolNames = [
+      "dataeye_user_list",
+      "dataeye_role_list",
+      "dataeye_project_list",
+      "dataeye_event_analysis",
+    ];
+
+    applySubAgent(userRunner, state, "base");
+    expect(state.allowedToolNames).toContain("dataeye_project_list");
+    expect(state.allowedToolNames).not.toContain("dataeye_event_analysis");
   });
 
   it("user sub-agent keeps user/role tools and lets dataeye_user_*_create through", () => {

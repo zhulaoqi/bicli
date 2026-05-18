@@ -1,4 +1,5 @@
 import type { AgentRunState, RouteDecision } from "../agent-state.js";
+import { mergeToolsAfterSubAgentFilter } from "../tool-guard.js";
 import { scheduleRunner } from "./schedule-runner.js";
 import { analysisRunner } from "./analysis-runner.js";
 import { userRunner } from "./user-runner.js";
@@ -28,9 +29,24 @@ export function pickSubAgent(decision: RouteDecision, registry: SubAgent[] = def
   if (decision.route === "knowledge" || decision.route === "visual_explain") {
     return null;
   }
+
+  const domains = decision.domains;
+  const byName = (name: string) => registry.find((a) => a.name === name) ?? null;
+
+  // 项目/图表/分析类问题优先 analysis，避免「有权限」误命中 role 后 user 子 Agent 裁掉 dataeye_project_list
+  if (domains.some((d) => ["project", "chart", "analysis", "event", "table", "view", "dashboard"].includes(d))) {
+    return byName("analysis");
+  }
+  if (domains.includes("schedule")) {
+    return byName("schedule");
+  }
+  if (domains.some((d) => ["user", "role"].includes(d))) {
+    return byName("user");
+  }
+
   for (const agent of registry) {
     for (const domain of agent.domains) {
-      if (decision.domains.includes(domain)) return agent;
+      if (domains.includes(domain)) return agent;
     }
   }
   return null;
@@ -49,7 +65,18 @@ export interface ApplyResult {
  * 即使 sub-agent.toolFilter 不删除任何工具也不会出错。
  */
 export function applySubAgent(agent: SubAgent, state: AgentRunState, basePrompt: string): ApplyResult {
-  state.allowedToolNames = state.allowedToolNames.filter((n) => agent.toolFilter(n));
+  const beforeFilter = [...state.allowedToolNames];
+  const filtered = beforeFilter.filter((n) => agent.toolFilter(n));
+  const { merged, restored } = mergeToolsAfterSubAgentFilter(
+    beforeFilter,
+    filtered,
+    state.route.domains,
+    state.preferredToolNames,
+  );
+  state.allowedToolNames = merged;
+  if (restored.length > 0) {
+    console.log(`[sub-agent] ${agent.name} restored sticky tools: ${restored.join(", ")}`);
+  }
   const trimmed = (agent.systemPromptSuffix || "").trim();
   const systemPrompt = trimmed.length > 0 ? `${basePrompt}\n\n${trimmed}` : basePrompt;
   return { systemPrompt, appliedAgent: agent.name };

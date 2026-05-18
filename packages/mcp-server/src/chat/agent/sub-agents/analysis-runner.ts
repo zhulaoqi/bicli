@@ -6,13 +6,20 @@ const TOOL_PREFIXES = [
   "dataeye_funnel_",
   "dataeye_retention_",
   "dataeye_project_",
+  "dataeye_table_",
+  "dataeye_view_",
+  "dataeye_dashboard_",
+  "dataeye_chart_",
+  "dataeye_sql_",
+  "dataeye_dws_",
+  "dataeye_datasource_",
 ];
 
 const KNOWLEDGE_TOOLS = new Set(["dataeye_knowledge_search", "dataeye_concept_explain"]);
 
 export const analysisRunner: SubAgent = {
   name: "analysis",
-  domains: ["analysis", "event"],
+  domains: ["analysis", "event", "project", "chart", "table", "view", "dashboard"],
   toolFilter(name: string) {
     if (KNOWLEDGE_TOOLS.has(name)) return true;
     return TOOL_PREFIXES.some((p) => name.startsWith(p));

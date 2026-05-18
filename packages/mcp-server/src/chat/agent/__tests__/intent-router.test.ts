@@ -45,6 +45,16 @@ describe("intent-router (rule layer)", () => {
     });
   });
 
+  describe("domain detection", () => {
+    it("does not map bare 有权限 to role domain (avoids stripping project_list)", () => {
+      const decision = routeUserMessage(
+        baseInput({ userMessage: "查看我有权限的所有项目最近7天DAU变化" }),
+      );
+      expect(decision.domains).toEqual(expect.arrayContaining(["project"]));
+      expect(decision.domains).not.toContain("role");
+    });
+  });
+
   describe("read-only role list queries", () => {
     it.each([
       "我的组织里有哪些角色可以分配",

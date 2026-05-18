@@ -11,7 +11,7 @@ import { writeAuditLog, buildAuditEntry } from "../middleware/audit.js";
 
 export function registerTools(server: Server, db: Database, adapter: PermissionAdapter) {
   const enableDateye = process.env.PERMISSION_MODE === "dataeye" || !!process.env.DATAEYE_API_URL;
-  const enableDatart = !!process.env.DATART_API_URL;
+  const enableDatart = !!(process.env.DATART_API_URL || process.env.DATAEYE_API_URL);
   const allTools = getEnabledTools(process.env);
   if (enableDateye) {
     console.error(`[tools] Dataeye tools enabled (${allTools.filter((tool) => tool.domain === "dataeye").length} tools)`);

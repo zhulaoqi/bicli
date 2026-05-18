@@ -126,7 +126,8 @@ export interface ToolDefinition {
 
 const alwaysEnabled = () => true;
 const dataeyeEnabled = (env: NodeJS.ProcessEnv) => env.PERMISSION_MODE === "dataeye" || Boolean(env.DATAEYE_API_URL);
-const visualizationEnabled = (env: NodeJS.ProcessEnv) => Boolean(env.DATART_API_URL);
+const visualizationEnabled = (env: NodeJS.ProcessEnv) =>
+  Boolean(env.DATART_API_URL || env.DATAEYE_API_URL);
 
 export const coreDomain: ToolDomain = {
   domain: "core",
