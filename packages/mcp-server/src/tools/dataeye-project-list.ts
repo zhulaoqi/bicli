@@ -48,7 +48,9 @@ export async function dateyeProjectList(db: Database, adapter: PermissionAdapter
 
 export const dateyeProjectListDef = {
   name: "dataeye_project_list",
-  description: "获取当前用户有权访问的 dataeye 项目和产品列表，是使用事件/数据表/SQL查询功能的前置步骤",
+  description:
+    "获取当前用户有权访问的 dataeye 项目和产品列表（返回数字 id）。" +
+    "用于事件分析/数据表等需 projectId 的场景；SQL 的 sourceId 请用 dataeye_datasource_list，勿用本项目 id。",
   inputSchema: {
     type: "object" as const,
     properties: {
