@@ -125,7 +125,11 @@ export async function runAct(state: AgentRunState, deps: AgentDeps): Promise<voi
         case "tool-result": {
           const duration = Date.now() - (toolStartTimes[part.toolCallId] || Date.now());
           const rec = state.toolCalls.find((r) => r.id === part.toolCallId);
-          if (rec?.status === "error" && rec.result?.includes("TOOL_NOT_ALLOWED")) {
+          if (
+            rec?.status === "error" &&
+            typeof rec.result === "string" &&
+            rec.result.includes("TOOL_NOT_ALLOWED")
+          ) {
             break;
           }
           let toolSuccess = true;
