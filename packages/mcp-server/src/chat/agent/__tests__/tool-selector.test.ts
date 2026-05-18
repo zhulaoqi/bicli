@@ -128,6 +128,23 @@ describe("selectToolsForRoute", () => {
       const allowedNames = result.allowed.map((t) => t.name);
       expect(allowedNames).toContain("dataeye_role_create");
     });
+
+    it("allows dataeye_role_list on write_action for assign-member flows", () => {
+      const registry = [
+        ...fakeRegistry,
+        {
+          name: "dataeye_role_list",
+          domain: "dataeye",
+          routeHints: ["realtime_query", "diagnosis"] as const,
+        },
+      ];
+      const result = selectToolsForRoute(
+        registry as Parameters<typeof selectToolsForRoute>[0],
+        baseDecision({ route: "write_action", domains: ["role"], needsUserConfirm: true }),
+        { userMessage: "我的组织里有哪些角色可以分配" },
+      );
+      expect(result.allowed.map((t) => t.name)).toContain("dataeye_role_list");
+    });
   });
 
   describe("diagnosis route", () => {

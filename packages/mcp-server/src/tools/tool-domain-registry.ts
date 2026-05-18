@@ -281,6 +281,9 @@ const ROUTE_HINT_OVERRIDES: Record<string, RouteName[]> = {
   data_aggregate: ["realtime_query"],
   config_get: ["realtime_query"],
   self_permissions: ["realtime_query"],
+  dataeye_role_list: ["realtime_query", "write_action", "diagnosis"],
+  dataeye_user_list: ["realtime_query", "write_action", "diagnosis"],
+  dataeye_project_list: ["realtime_query", "write_action", "diagnosis"],
 
   // session 工具属于会话管理，路由层面不参与
   session_save: ["realtime_query"],

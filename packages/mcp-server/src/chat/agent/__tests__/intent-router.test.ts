@@ -45,6 +45,17 @@ describe("intent-router (rule layer)", () => {
     });
   });
 
+  describe("read-only role list queries", () => {
+    it.each([
+      "我的组织里有哪些角色可以分配",
+      "列出组织里所有角色",
+    ])("classifies %j as realtime_query (not write_action)", (msg) => {
+      const decision = routeUserMessage(baseInput({ userMessage: msg }));
+      expect(decision.route).toBe("realtime_query");
+      expect(decision.domains).toEqual(expect.arrayContaining(["role"]));
+    });
+  });
+
   describe("write_action route", () => {
     it.each([
       "帮我创建一个用户 analyst@example.com",

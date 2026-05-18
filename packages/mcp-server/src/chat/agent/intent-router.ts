@@ -70,6 +70,15 @@ const realtimeActionMarkers = [
   /下载|导出|分享|生成.*链接/,
 ];
 
+/** 先查列表、暂不执行写入（如「有哪些角色可以分配」） */
+const readOnlyListMarkers = [
+  /有哪些.{0,24}角色/,
+  /角色.{0,16}(有哪些|列表|清单)/,
+  /列出.{0,16}角色/,
+  /(可以|能).{0,8}分配.{0,12}角色|角色.{0,12}(可以|能)分配/,
+  /有哪些.{0,12}可以分配/,
+];
+
 /** 业务领域关键词（与 selector domain 对齐） */
 const DOMAIN_KEYWORDS: Record<string, RegExp[]> = {
   schedule: [/定时|调度|计划任务|schedule|cron/i, /推送报表|定时发送|定时推送/],
@@ -170,6 +179,13 @@ export function routeUserMessage(input: RouteInput): RouteDecision {
   score.visual_explain += countMatches(text, visualExplainMarkers) * 3;
   score.realtime_query += countMatches(text, realtimeActionMarkers) * 2;
   score.realtime_query += countMatches(text, concreteDataMarkers);
+
+  // 「有哪些角色可以分配」：查询可选项，不是立即执行分配写操作
+  const readOnlyListHit = countMatches(text, readOnlyListMarkers);
+  if (readOnlyListHit > 0) {
+    score.realtime_query += 5;
+    score.write_action = Math.max(0, score.write_action - 2);
+  }
 
   // 历史消息中出现 ID 或资源名 → 视为存在实时查询线索
   // 历史证据只看 user 消息，避免 assistant 幻觉文本污染下一轮路由。

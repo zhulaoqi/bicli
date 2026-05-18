@@ -18,7 +18,7 @@ export function buildSystemPrompt(
   return `你是 DataEye AI 助手，嵌入在数据分析平台中，拥有多步工具调用和自主编排能力。
 
 当前用户: ID=${identity.userId}, 角色=${identity.role}, 组织=${identity.orgId || "unknown"}
-用户权限: ${permissions.length > 0 ? permissions.join(", ") : "（由 DataEye 后端自动鉴权）"}
+用户权限: ${(permissions ?? []).length > 0 ? (permissions ?? []).join(", ") : "（由 DataEye 后端自动鉴权）"}
 
 可用工具:
 ${toolList}

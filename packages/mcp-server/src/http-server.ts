@@ -462,7 +462,7 @@ async function main() {
     const history = (await store.getMessages(sid))
       .filter((m) => m.role === "user" || m.role === "assistant")
       .map((m) => {
-        let content = m.content;
+        let content = m.content ?? "";
         if (m.role === "assistant" && Array.isArray(m.toolCalls) && m.toolCalls.length > 0) {
           const toolSummary = m.toolCalls
             .map((t) => `${t.name}:${t.status === "done" ? "ok" : t.status}`)

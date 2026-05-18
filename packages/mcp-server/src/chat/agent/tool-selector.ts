@@ -69,6 +69,13 @@ function isPureKnowledgeTool(tool: ToolRouteFacet): boolean {
   return tool.knowledgeOnly === true;
 }
 
+/** 写操作前常需先查角色/用户/项目列表，这些只读 list 工具在 write_action 路由也应可见 */
+function isReadOnlyQueryTool(tool: ToolRouteFacet): boolean {
+  if (isToolDestructive(tool)) return false;
+  if (tool.name === "self_permissions" || tool.name === "config_get") return true;
+  return /_list$/.test(tool.name) || tool.name.endsWith("_archived_list");
+}
+
 function matchesAnyDomain(tool: ToolRouteFacet, domains: string[]): boolean {
   if (domains.length === 0) return true;
   for (const d of domains) {
@@ -106,8 +113,12 @@ export function selectToolsForRoute<T extends ToolRouteFacet>(
       continue;
     }
 
-    // 3. 工具的 routeHints 必须包含当前 route
+    // 3. 工具的 routeHints 必须包含当前 route（写路由下仍放行只读 list 查询）
     if (!hints.includes(route)) {
+      if (route === "write_action" && isReadOnlyQueryTool(tool)) {
+        allowed.push(tool);
+        continue;
+      }
       forbidden.push(tool.name);
       continue;
     }
