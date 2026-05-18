@@ -138,11 +138,14 @@ export function packStructuredMessageContent(
   return `${content}\n<!--bicli_structured ${payload}-->`;
 }
 
-export function unpackStructuredMessageContent(content: string): {
+export function unpackStructuredMessageContent(content: string | null | undefined): {
   content: string;
   blocks?: MessageBlock[];
   charts?: unknown[];
 } {
+  if (content == null || content === "") {
+    return { content: "", blocks: undefined, charts: undefined };
+  }
   const match = content.match(/\n?<!--bicli_structured\s+([A-Za-z0-9+/=]+)-->\s*$/);
   if (!match) {
     return { content, blocks: undefined, charts: undefined };
