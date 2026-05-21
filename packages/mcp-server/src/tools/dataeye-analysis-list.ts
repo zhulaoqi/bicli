@@ -9,6 +9,75 @@ import type { PermissionAdapter } from "../auth/adapter.js";
  *
  * type: 1=事件分析 2=漏斗分析 3=留存分析 4=用户行为
  */
+type RawAnalysisListResult = {
+  records?: Array<{
+    id: number;
+    name: string;
+    type: number;
+    status?: number;
+    projectId?: number;
+    projectName?: string;
+    productId?: number;
+    productName?: string;
+    createBy?: string;
+    represent?: string | null;
+    updateTime?: string;
+    createTime?: string;
+    isFavorites?: boolean;
+  }>;
+  total?: number;
+  current?: number;
+  pages?: number;
+};
+
+const typeLabel: Record<number, string> = {
+  1: "事件分析",
+  2: "漏斗分析",
+  3: "留存分析",
+  4: "用户行为分析",
+};
+
+export function normalizeAnalysisListResult(data: RawAnalysisListResult) {
+  const analyses = (data.records ?? []).map((r) => ({
+    id: r.id,
+    name: r.name,
+    type: r.type,
+    typeName: typeLabel[r.type] ?? `类型${r.type}`,
+    projectId: r.projectId,
+    projectName: r.projectName,
+    productId: r.productId,
+    productName: r.productName,
+    createBy: r.createBy,
+    represent: r.represent,
+    isFavorites: r.isFavorites,
+    updateTime: r.updateTime,
+    navigation: {
+      projectId: r.projectId,
+      productId: r.productId,
+      analysisId: r.id,
+      type: r.type,
+      target: analysisTargetPath(r.type, r.id),
+    },
+  }));
+
+  return {
+    total: data.total ?? analyses.length,
+    page: data.current ?? 1,
+    totalPages: data.pages ?? 1,
+    analyses,
+  };
+}
+
+function analysisTargetPath(type: number, id: number): string {
+  const map: Record<number, string> = {
+    1: "event",
+    2: "funnel",
+    3: "retention",
+    4: "behavior",
+  };
+  return `/dataAnalysis/${map[type] ?? "event"}?id=${id}`;
+}
+
 export async function dateyeAnalysisList(db: Database, adapter: PermissionAdapter, args: Record<string, unknown>) {
   return withAuth(db, adapter, args, [], async (_db, cleanArgs, context) => {
     const {
@@ -33,53 +102,9 @@ export async function dateyeAnalysisList(db: Database, adapter: PermissionAdapte
     if (type !== undefined) body.type = Number(type);
     if (name) body.name = String(name);
 
-    const data = await dateyeRequest<{
-      records: Array<{
-        id: number;
-        name: string;
-        type: number;
-        status: number;
-        projectId: number;
-        projectName: string;
-        productId: number;
-        productName: string;
-        createBy: string;
-        represent: string | null;
-        updateTime: string;
-        createTime: string;
-        isFavorites: boolean;
-      }>;
-      total: number;
-      current: number;
-      pages: number;
-    }>("/api/self-analysis-event/page", context, { method: "POST", body });
+    const data = await dateyeRequest<RawAnalysisListResult>("/api/self-analysis-event/page", context, { method: "POST", body });
 
-    const typeLabel: Record<number, string> = {
-      1: "事件分析",
-      2: "漏斗分析",
-      3: "留存分析",
-      4: "用户行为分析",
-    };
-
-    const list = (data.records ?? []).map((r) => ({
-      id: r.id,
-      name: r.name,
-      type: r.type,
-      typeName: typeLabel[r.type] ?? `类型${r.type}`,
-      projectName: r.projectName,
-      productName: r.productName,
-      createBy: r.createBy,
-      represent: r.represent,
-      isFavorites: r.isFavorites,
-      updateTime: r.updateTime,
-    }));
-
-    return formatSuccess({
-      total: data.total,
-      page: data.current,
-      totalPages: data.pages,
-      analyses: list,
-    });
+    return formatSuccess(normalizeAnalysisListResult(data));
   });
 }
 

@@ -3,6 +3,22 @@ import { dateyeRequest } from "./dataeye-proxy.js";
 import type { Database } from "../db/connection.js";
 import type { PermissionAdapter } from "../auth/adapter.js";
 
+type ProductItem = {
+  id: number;
+  name: string;
+  projectId: number;
+  orgId?: string;
+  [key: string]: unknown;
+};
+
+export function filterProductsByKeyword<T extends ProductItem>(products: T[], keyword?: unknown) {
+  const kw = String(keyword ?? "").trim().toLowerCase();
+  if (!kw) return products;
+  return products
+    .filter((p) => String(p.name ?? "").toLowerCase().includes(kw))
+    .map((p) => ({ ...p, matchedBy: "local_name" as const }));
+}
+
 /**
  * dataeye 项目/产品列表
  *
@@ -17,18 +33,13 @@ export async function dateyeProjectList(db: Database, adapter: PermissionAdapter
     const { type = "project" } = cleanArgs;
 
     if (type === "product") {
-      const { projectId } = cleanArgs;
+      const { projectId, keyword } = cleanArgs;
       const params: Record<string, string | number | undefined> = {};
       if (projectId) params.projectIdList = String(projectId);
 
-      const data = await dateyeRequest<Array<{
-        id: number;
-        name: string;
-        projectId: number;
-        orgId: string;
-      }>>("/api/tenant/product/list/user", context, { params });
+      const data = await dateyeRequest<ProductItem[]>("/api/tenant/product/list/user", context, { params });
 
-      return formatSuccess(data);
+      return formatSuccess(filterProductsByKeyword(data ?? [], keyword));
     }
 
     const { keyword } = cleanArgs;
@@ -56,7 +67,7 @@ export const dateyeProjectListDef = {
     properties: {
       type: { type: "string", enum: ["project", "product"], description: "查询类型: project=项目列表, product=产品列表", default: "project" },
       projectId: { type: "number", description: "项目 ID（type=product 时指定，查该项目下的产品）" },
-      keyword: { type: "string", description: "搜索关键词（type=project 时有效）" },
+      keyword: { type: "string", description: "搜索关键词。type=project 时透传后端 key；type=product 时本地按产品名过滤" },
       _context: { type: "object" },
     },
     required: ["_context"],
