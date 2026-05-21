@@ -9,6 +9,7 @@ export interface SessionRecord {
   orgId: string | null;
   title: string | null;
   model: string | null;
+  metadata?: Record<string, unknown> | null;
   status: "active" | "archived";
   createdAt: Date;
   updatedAt: Date;
@@ -118,6 +119,10 @@ export class SessionStore {
 
   async updateModel(sessionId: number, model: string): Promise<void> {
     await this.db.update(sessions).set({ model }).where(eq(sessions.id, sessionId));
+  }
+
+  async updateMetadata(sessionId: number, metadata: Record<string, unknown>): Promise<void> {
+    await this.db.update(sessions).set({ metadata }).where(eq(sessions.id, sessionId));
   }
 
   async delete(id: number, userId: string): Promise<void> {

@@ -42,8 +42,8 @@ requiredTools:
 步骤1: dataeye_project_list()
    → 获取用户有权限的项目列表（记录所有 projectId）
 
-步骤2: 对每个 projectId 调用 dataeye_analysis_list(projectId=<id>)
-   → 汇总所有可访问分析
+步骤2: dataeye_analysis_list()
+   → 不传 projectId，跨全部可访问项目一次性查询；如用户给了分析名称，传 name 做模糊搜索
 
 步骤3: 整理输出，按分析类型分组展示
 ```
@@ -71,16 +71,14 @@ requiredTools:
 **执行流程：**
 
 ```
-步骤1: dataeye_project_list()
-   → 确认用户有权限的项目
-
-步骤2: dataeye_analysis_list(projectId=<id>, name="<用户输入的关键词>")
+步骤1: dataeye_analysis_list(name="<用户输入的关键词>")
    → 找到目标分析的 ID
+   → 返回结果中包含 projectId/productId/navigation，可用于提示用户前往对应项目
 
-步骤3: dataeye_analysis_execute(analysisId=<id>)
+步骤2: dataeye_analysis_execute(analysisId=<id>)
    → 执行分析，获取结果
 
-步骤4: 解读结果并给出洞察
+步骤3: 解读结果并给出洞察
 ```
 
 ### 场景三：用户要求解读分析结果
@@ -116,4 +114,5 @@ requiredTools:
 
 - **不要一次性展示全部原始数据**：只展示关键摘要（summary 字段），rawData 太多不适合在对话中展示
 - **分析名称模糊时**：先展示匹配列表让用户确认，再执行
-- **多项目时**：并行或依次查各项目下的分析列表，然后汇总
+- **多项目时**：不要逐项目循环；`dataeye_analysis_list` 不传 projectId 会跨全部可访问项目查询。
+- **前往分析**：列表返回的 `navigation.projectId/productId/target` 可用于告诉用户“该分析属于哪个项目/产品，可前往对应分析页”。

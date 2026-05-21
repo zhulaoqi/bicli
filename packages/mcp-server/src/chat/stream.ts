@@ -58,6 +58,8 @@ export interface StreamChatParams {
   customConfig?: CustomModelConfig;
   /** Skill 声明的优先工具名，selector 后强制并入 allowed 列表 */
   preferredToolNames?: string[];
+  /** 当前权限范围指纹，用于隔离 router cache */
+  scopeFingerprint?: string;
 }
 
 /**
@@ -133,6 +135,7 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
     maxSteps = 8,
     customConfig,
     preferredToolNames = [],
+    scopeFingerprint,
   } = params;
 
   res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
@@ -169,6 +172,7 @@ export async function handleChatStream(params: StreamChatParams): Promise<void> 
         userMessage,
         history,
         pageContextEvidence: hasPageContextEvidence,
+        scopeFingerprint,
       },
       { cache: routerCache, sessionId },
     );

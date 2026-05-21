@@ -21,6 +21,8 @@ requiredTools:
 
 # DataEye 事件分析向导
 
+本 Skill 用于“创建/配置/执行一个事件分析、漏斗分析、留存分析”的分析任务，不等同于创建原始埋点或虚拟事件。用户说“创建事件分析”时，应走本 Skill；用户说“创建事件/新增埋点/创建虚拟事件”才走事件管理。
+
 ## 与 SQL 查询的区别
 
 | 维度 | 事件分析（本 Skill） | SQL 查询 |
@@ -52,10 +54,18 @@ dataeye_project_list(type="product", projectId=xxx) → 选产品，获取 produ
 
 ### 步骤 3：确认事件名
 
+创建或执行事件分析前，必须先确认产品下存在可选事件；不要在未调用工具时直接说“没有埋点信息”。
+
 若用户说"登录事件"但不知道具体事件名：
 ```
 dataeye_event_list(productId=xxx, keyword="login")
 → 找到实际事件名（如 user_login, app_login）
+```
+
+如果用户没有给事件名：
+```
+dataeye_event_list(productId=xxx, pageSize=20)
+→ 展示可选事件，让用户选择分析指标
 ```
 
 ### 步骤 4：构造分析参数并执行
@@ -90,5 +100,5 @@ dataeye_event_analysis({
 | 错误 | 处理方式 |
 |------|----------|
 | appId 未知 | 提示用户查看产品详情，或调 dataeye_project_list 中的产品信息获取 |
-| 事件名不存在 | 调 dataeye_event_list 搜索正确名称 |
+| 事件名不存在 | 调 dataeye_event_list 搜索正确名称；返回空只能说明当前产品/关键词下未查到，不要推断没有埋点 |
 | 日期格式错误 | 统一转换为 YYYY-MM-DD 格式 |

@@ -57,6 +57,23 @@ describe("RouterCache", () => {
     expect(k1).not.toBe(k3);
     expect(k1).not.toBe(k4);
   });
+
+  it("includes permission scope in cache key", () => {
+    const k1 = RouterCache.makeKey({
+      sessionId: 1,
+      userMessage: "确认",
+      contextFingerprint: "h=user:create",
+      scopeFingerprint: "org=o1|role=r1|perms=a,b",
+    });
+    const k2 = RouterCache.makeKey({
+      sessionId: 1,
+      userMessage: "确认",
+      contextFingerprint: "h=user:create",
+      scopeFingerprint: "org=o1|role=r1|perms=a,b,c",
+    });
+
+    expect(k1).not.toBe(k2);
+  });
 });
 
 describe("runRouter cache integration", () => {
@@ -134,6 +151,25 @@ describe("runRouter cache integration", () => {
     expect(first.domains).toContain("schedule");
     expect(second.domains).toContain("user");
     // 短确认语默认禁用缓存，避免误命中旧上下文
+    expect(first.reasoning.startsWith("cache:")).toBe(false);
+    expect(second.reasoning.startsWith("cache:")).toBe(false);
+  });
+
+  it("does not reuse cached route after permission scope changes", async () => {
+    const cache = new RouterCache({ capacity: 10, ttlMs: 60_000 });
+    const sessionId = 8;
+    const userMessage = "查一下产品信息";
+    const history: Array<{ role: "user" | "assistant"; content: string }> = [];
+
+    const first = await runRouter(
+      { userMessage, history, pageContextEvidence: false, scopeFingerprint: "scope:cgt" },
+      { cache, sessionId },
+    );
+    const second = await runRouter(
+      { userMessage, history, pageContextEvidence: false, scopeFingerprint: "scope:wgt" },
+      { cache, sessionId },
+    );
+
     expect(first.reasoning.startsWith("cache:")).toBe(false);
     expect(second.reasoning.startsWith("cache:")).toBe(false);
   });

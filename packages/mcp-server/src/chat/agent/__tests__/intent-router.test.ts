@@ -45,6 +45,30 @@ describe("intent-router (rule layer)", () => {
     });
   });
 
+  describe("dashboard vs chart domain detection", () => {
+    it("classifies explicit chart requests as chart domain, not only dashboard", () => {
+      const decision = routeUserMessage(
+        baseInput({ userMessage: "帮我看一下这个 chart 的数据" }),
+      );
+
+      expect(decision.route).toBe("realtime_query");
+      expect(decision.domains).toContain("chart");
+      expect(decision.domains).not.toEqual(["dashboard"]);
+    });
+  });
+
+  describe("event analysis creation intent", () => {
+    it("keeps 创建事件分析 in analysis domain instead of event management", () => {
+      const decision = routeUserMessage(
+        baseInput({ userMessage: "帮我创建一个登录事件分析" }),
+      );
+
+      expect(decision.route).toBe("write_action");
+      expect(decision.domains).toContain("analysis");
+      expect(decision.domains).not.toEqual(["event"]);
+    });
+  });
+
   describe("domain detection", () => {
     it("does not map bare 有权限 to role domain (avoids stripping project_list)", () => {
       const decision = routeUserMessage(

@@ -16,6 +16,10 @@ const BUSINESS_SKILL_NAMES = new Set([
   "dataeye-table-management",
   "dataeye-dashboard",
   "dataeye-self-analysis",
+  "dataeye-event-analysis",
+  "dataeye-event-management",
+  "dataeye-event-explore",
+  "dataeye-data-query",
   "dataeye-knowledge",
 ]);
 
@@ -89,6 +93,12 @@ function matchBusinessSkill(userInput: string): Skill | null {
   if (/看板|看板数据|看板结果/.test(userInput)) {
     return findLoadedSkill("dataeye-dashboard");
   }
+  if (/创建.{0,12}事件分析|新建.{0,12}事件分析|事件趋势|趋势分析|漏斗分析|留存分析/.test(userInput)) {
+    return findLoadedSkill("dataeye-event-analysis");
+  }
+  if (/创建事件|新增事件|添加事件|创建虚拟事件/.test(userInput) && !/事件分析/.test(userInput)) {
+    return findLoadedSkill("dataeye-event-management");
+  }
   return null;
 }
 
@@ -104,6 +114,10 @@ function businessSkillPriority(name: string): number {
     "dataeye-user-role-management",
     "dataeye-table-management",
     "dataeye-self-analysis",
+    "dataeye-event-analysis",
+    "dataeye-event-management",
+    "dataeye-event-explore",
+    "dataeye-data-query",
     "dataeye-knowledge",
   ];
   const index = priority.indexOf(name);

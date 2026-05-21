@@ -24,7 +24,9 @@ requiredTools:
 
 ## 首选业务动作
 
-用户要“查看/分析某个资源的真实数据”时，优先调用 `dataeye_dashboard_execute`，并传入用户原始名称或引用作为 `dashboardRef`。不要自己把名称猜成 ID，不要把 `folderId` 当作执行 ID，也不要把资源 ID 当作 `viewId` 传给 `dataeye_chart_data_execute`；单图/视图工具只用于用户明确要求执行某个单独组件。
+用户要“查看/分析某个看板/资源的真实数据”时，优先调用 `dataeye_dashboard_execute`，并传入用户原始名称或引用作为 `dashboardRef`。不要自己把名称猜成 ID，不要把 `folderId` 当作执行 ID。
+
+用户明确说“chart/图表/单图/某个组件”的数据时，不要一直在 dashboard 里找；应先用 `dataeye_dashboard_detail` 从看板详情中定位图表的 `chartId/viewId`，或在用户已提供 `viewId/chartId` 时直接调用 `dataeye_chart_data_execute`。`dataeye_chart_data_execute` 只用于单图或视图执行，不要把看板 ID 传给它。
 
 ## 工作流程
 
@@ -102,6 +104,7 @@ requiredTools:
 |------|------|
 | 资源列表为空 | "当前组织下暂无可见资源" |
 | 找不到指定名称 | 列出名称相似的看板供选择 |
+| 用户问的是 chart/图表 | 先确认是否是看板内单图；有 viewId/chartId 时调用 `dataeye_chart_data_execute`，不要反复按 dashboard 名称查 |
 | 图表数据为空 | "该图表暂无数据；只能说明当前查询条件下无返回数据，不要推断根因" |
 | 执行超时 | "数据量较大，建议缩短时间范围后重试" |
 | 权限不足 | "您没有该看板的访问权限" |

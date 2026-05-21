@@ -6,6 +6,8 @@ export interface RouteInput {
   history: Array<{ role: "user" | "assistant"; content: string }>;
   /** 调用方在前端注入了"当前页面 evidence"时为 true，可以提升 realtime_query 命中 */
   pageContextEvidence: boolean;
+  /** 当前用户/组织/权限范围指纹；权限变化时隔离 router cache */
+  scopeFingerprint?: string;
 }
 
 /**
@@ -303,6 +305,7 @@ export async function runRouter(
         sessionId: options.sessionId,
         userMessage: input.userMessage,
         contextFingerprint,
+        scopeFingerprint: input.scopeFingerprint,
       })
       : null;
   if (cacheEnabled && options.cache && cacheKey) {
@@ -354,7 +357,7 @@ function buildContextFingerprint(input: RouteInput): string {
   const historyDigest = tail
     .map((m) => `${m.role}:${compactText(m.content).slice(0, 160)}`)
     .join("||");
-  return `page=${input.pageContextEvidence ? 1 : 0}|h=${historyDigest}`;
+  return `scope=${input.scopeFingerprint ?? ""}|page=${input.pageContextEvidence ? 1 : 0}|h=${historyDigest}`;
 }
 
 function compactText(s: string): string {

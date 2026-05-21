@@ -16,6 +16,7 @@ import { eq, and } from "drizzle-orm";
 import { buildSystemPrompt as buildSP } from "./chat/system-prompt.js";
 import { routeDataEyeHelpSkill } from "./chat/skill-routing.js";
 import { buildPageContextPrompt, hasPageContextEvidence, sanitizePageContext } from "./chat/page-context.js";
+import { buildPermissionScopeKey, filterHistoryForScope } from "./chat/history-scope.js";
 import { loadChatToolRegistry } from "./tools/tool-domain-registry.js";
 
 const PORT = parseInt(process.env.MCP_HTTP_PORT || "3211", 10);
@@ -435,6 +436,25 @@ async function main() {
     await initToolHandlers();
     const token = extractBearerToken(req)!;
     const permissions = await adapter0.getPermissions(identity.role);
+    const currentScopeKey = buildPermissionScopeKey({
+      userId: identity.userId,
+      orgId: identity.orgId,
+      role: identity.role,
+      permissions,
+    });
+    const sessionMetadata = (session.metadata && typeof session.metadata === "object")
+      ? session.metadata as Record<string, unknown>
+      : {};
+    const sessionScopeKey = typeof sessionMetadata.permissionScopeKey === "string"
+      ? sessionMetadata.permissionScopeKey
+      : null;
+    if (sessionScopeKey !== currentScopeKey) {
+      await store.updateMetadata(sid, {
+        ...sessionMetadata,
+        permissionScopeKey: currentScopeKey,
+        permissionScopeUpdatedAt: new Date().toISOString(),
+      });
+    }
     const routed = routeDataEyeHelpSkill(message, permissions, toolDefCache);
     const sanitizedPageContext = sanitizePageContext(pageContext);
     const pageContextPrompt = buildPageContextPrompt(sanitizedPageContext.context);
@@ -459,7 +479,7 @@ async function main() {
     // stream.ts 会在开始时 addMessage(user) — 所以此处只需拿入库前的历史即可
     // 对 assistant 消息：若存在工具调用记录，把工具名注入到 content 前缀，
     // 防止 LLM 在历史回放中看不到工具证据而产生"说✅成功不需要调工具"的幻觉。
-    const history = (await store.getMessages(sid))
+    const rawHistory = (await store.getMessages(sid))
       .filter((m) => m.role === "user" || m.role === "assistant")
       .map((m) => {
         let content = m.content ?? "";
@@ -472,6 +492,10 @@ async function main() {
         }
         return { role: m.role as "user" | "assistant", content };
       });
+    const history = filterHistoryForScope(rawHistory, {
+      sessionScopeKey,
+      currentScopeKey,
+    });
 
     const toolSpecs: StreamToolSpec[] = routed.tools.map((t) => ({
       name: t.name,
@@ -556,6 +580,7 @@ async function main() {
       hasPageContextEvidence: hasPageContextEvidence(sanitizedPageContext.context),
       customConfig,
       preferredToolNames: (routed.skill?.requiredTools ?? []).filter(Boolean),
+      scopeFingerprint: currentScopeKey,
     });
   } catch (e: any) {
     console.error("[/chat/stream] unhandled error:", e);
